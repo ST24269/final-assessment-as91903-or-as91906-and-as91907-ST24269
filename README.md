@@ -21,7 +21,7 @@ The project is split across three assessed components that each cover a distinct
 
 ## The problem
 
-Manual attendance recording at OSC takes roughly three minutes per teacher per day and carries an error rate of 1–3%. Over 60% of survey respondents reported experiencing an attendance error at least once a month. From Term 1 2026, schools must also log Attendance Management Plan responses for every student who hits an absence threshold — the compliance burden has gone up while the tools haven't changed. The Ministry of Education has acknowledged a 10% gap between school-reported attendance and its own calculated figures.
+Manual attendance recording at OSC takes roughly three minutes per teacher per day and carries an error rate of 1–3%. Over 60% of survey respondents reported experiencing an attendance error at least once a month. From Term 1 2026, schools must also log Attendance Management Plan responses for every student who hits an absence threshold, the compliance burden has gone up while the tools haven't changed. The Ministry of Education has acknowledged a 10% gap between school-reported attendance and its own calculated figures.
 
 ---
 
@@ -237,4 +237,4 @@ Live task board tracking all hardware, software, and electronics tasks:
 
 ## Status
 
-Hardware prototyping and firmware development in progress. Pilot classroom not yet selected. Legal review and IPP 3A parent notices pending before any live deployment.
+Hardware prototyping and firmware development in progress. Pilot classroom not yet selected. Legal review and IPP 3A parent notices pending before any live deployment
