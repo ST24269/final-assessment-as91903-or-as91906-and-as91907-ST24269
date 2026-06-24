@@ -34,7 +34,7 @@ export default function Card({ children, title, action, delay = 0 }) {
         }}
       >
         {(title || action) && (
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             {title && (
               <p className="text-[0.6rem] font-mono uppercase tracking-[0.16em] text-white/25">
                 {title}
