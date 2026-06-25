@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '../api/client'
+import SplitText from '../components/SplitText'
 
 const ROLE_COPY = {
   admin: {
@@ -60,7 +61,19 @@ export default function RoleLoginPage({ role }) {
           <div className="login-mark">AR</div>
           <div>
             <p>AttendRFID</p>
-            <h1>{config.label} sign in</h1>
+            <SplitText
+              tag="h1"
+              text={`${config.label} sign in`}
+              delay={35}
+              duration={0.5}
+              ease="power3.out"
+              splitType="chars"
+              from={{ opacity: 0, y: 16 }}
+              to={{ opacity: 1, y: 0 }}
+              threshold={0}
+              rootMargin="0px"
+              textAlign="left"
+            />
           </div>
         </div>
 

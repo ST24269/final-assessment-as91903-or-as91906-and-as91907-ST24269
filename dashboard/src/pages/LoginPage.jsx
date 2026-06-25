@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import SplitText from '../components/SplitText'
 
 const ROLES = [
   {
@@ -26,7 +27,19 @@ export default function LoginPage() {
           <div className="login-mark">AR</div>
           <div>
             <p>AttendRFID</p>
-            <h1>Sign in</h1>
+            <SplitText
+              tag="h1"
+              text="Sign in"
+              delay={45}
+              duration={0.55}
+              ease="power3.out"
+              splitType="chars"
+              from={{ opacity: 0, y: 18 }}
+              to={{ opacity: 1, y: 0 }}
+              threshold={0}
+              rootMargin="0px"
+              textAlign="left"
+            />
           </div>
         </div>
 
