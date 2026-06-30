@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../api/client'
+import { ExternalLink, Play, Square } from 'lucide-react'
 import { api } from '../api/client'
 
-export default function SessionPanel({ activeSession, setActiveSession, session }) {
+function formatSessionTime(value) {
+  return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'time not set'
+}
+
+export default function SessionPanel({ activeSession, setActiveSession }) {
   const [classes, setClasses] = useState([])
+  const [activeSessions, setActiveSessions] = useState([])
   const [selectedClass, setSelectedClass] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -13,20 +18,39 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
   useEffect(() => {
     let cancelled = false
 
-    async function loadClasses() {
-      const { data, error: classError } = await supabase
-        .from('classes')
-        .select('id, name, subject, room')
-        .order('name')
+    async function loadSessionSetup() {
+      try {
+        const [classData, sessionData] = await Promise.all([
+          api.get('/api/sessions/classes'),
+          api.get('/api/sessions'),
+        ])
 
-      if (cancelled) return
+        if (cancelled) return
 
-      if (classError) setError(classError.message)
-      setClasses(data || [])
-      setLoadingClasses(false)
+        if (classData?.error) {
+          setError(classData.error)
+          setClasses([])
+        } else {
+          setClasses(Array.isArray(classData) ? classData : [])
+        }
+
+        if (sessionData?.error) {
+          setError((current) => current || sessionData.error)
+          setActiveSessions([])
+        } else {
+          setActiveSessions(Array.isArray(sessionData) ? sessionData.filter((item) => !item.ended_at) : [])
+        }
+      } catch {
+        if (cancelled) return
+        setError('Could not load session data.')
+        setClasses([])
+        setActiveSessions([])
+      } finally {
+        if (!cancelled) setLoadingClasses(false)
+      }
     }
 
-    loadClasses()
+    loadSessionSetup()
 
     return () => { cancelled = true }
   }, [])
@@ -42,38 +66,61 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
     setLoading(true)
     setError(null)
 
-    const data = await api.post('/api/sessions/start', {
-      class_id: selectedClass,
-      teacher_id: session.user.id,
-      notes: notes.trim() || undefined,
-    })
-
-    if (data.error) {
-      setError(data.error)
-    } else {
-      setActiveSession({
-        ...data,
-        classes: data.classes || selectedClassDetails,
+    try {
+      const data = await api.post('/api/sessions/start', {
+        class_id: selectedClass,
+        notes: notes.trim() || undefined,
       })
-      setNotes('')
-    }
 
-    setLoading(false)
+      if (!data) {
+        setError('Could not start the session.')
+      } else if (data.error) {
+        if (data.active_session) {
+          setActiveSessions((prev) => (
+            prev.some((sessionItem) => sessionItem.id === data.active_session.id)
+              ? prev
+              : [data.active_session, ...prev]
+          ))
+          setActiveSession(data.active_session)
+          setError('This class already has an active session. You can continue it or end it before starting a new one.')
+        } else {
+          setError(data.error)
+        }
+      } else {
+        setActiveSession({
+          ...data,
+          classes: data.classes || selectedClassDetails,
+        })
+        setNotes('')
+        setActiveSessions((prev) => [data, ...prev.filter((sessionItem) => sessionItem.id !== data.id)])
+      }
+    } catch {
+      setError('Could not start the session.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const endSession = async () => {
     setLoading(true)
     setError(null)
 
-    const data = await api.patch(`/api/sessions/${activeSession.id}/end`, {})
+    try {
+      const data = await api.patch(`/api/sessions/${activeSession.id}/end`, {})
 
-    if (data.error) {
-      setError(data.error)
-    } else {
-      setActiveSession(null)
+      if (!data) {
+        setError('Could not end the session.')
+      } else if (data.error) {
+        setError(data.error)
+      } else {
+        setActiveSessions((prev) => prev.filter((sessionItem) => sessionItem.id !== activeSession.id))
+        setActiveSession(null)
+      }
+    } catch {
+      setError('Could not end the session.')
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   return (
@@ -93,7 +140,7 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
               <option value="">{loadingClasses ? 'Loading classes...' : 'Select a class...'}</option>
               {classes.map((classItem) => (
                 <option key={classItem.id} value={classItem.id}>
-                  {classItem.name} - {classItem.subject}{classItem.room ? ` (${classItem.room})` : ''}
+                  {classItem.name} - {classItem.subject}{classItem.room ? ` (${classItem.room})` : ''}{classItem.profiles?.full_name ? ` - ${classItem.profiles.full_name}` : ''}
                 </option>
               ))}
             </select>
@@ -110,6 +157,7 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
               disabled={loading || loadingClasses}
               className="min-h-11 rounded-[10px] bg-[#1A9B8C] px-5 py-2.5 text-sm font-bold text-[#050505] transition-all duration-300 hover:bg-[#22B5A4] hover:shadow-[0_4px_16px_rgba(26,155,140,0.3)] active:scale-[0.98] disabled:opacity-40"
             >
+              <Play size={15} strokeWidth={2.2} />
               {loading ? 'Starting...' : 'Start session'}
             </button>
           </div>
@@ -118,6 +166,41 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
             <p className="text-[0.78rem] font-mono text-[#8B9BB0]">
               Room: {selectedClassDetails.room || 'not set'} - Subject: {selectedClassDetails.subject}
             </p>
+          )}
+
+          {activeSessions.length > 0 && (
+            <div className="teacher-active-sessions">
+              <div className="portal-section-header">
+                <p>Active sessions</p>
+              </div>
+
+              <div className="teacher-active-session-list">
+                {activeSessions.map((sessionItem) => (
+                  <button
+                    key={sessionItem.id}
+                    type="button"
+                    onClick={() => {
+                      setError(null)
+                      setActiveSession(sessionItem)
+                    }}
+                    className="teacher-active-session-row"
+                  >
+                    <span>
+                      <strong>{sessionItem.classes?.name || 'Class session'}</strong>
+                      <small>
+                        {sessionItem.classes?.subject || 'Subject not set'}
+                        {sessionItem.classes?.room ? ` - ${sessionItem.classes.room}` : ''}
+                        {sessionItem.profiles?.full_name ? ` - opened by ${sessionItem.profiles.full_name}` : ''}
+                      </small>
+                    </span>
+                    <em>
+                      <ExternalLink size={14} strokeWidth={2.2} />
+                      Open
+                    </em>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       ) : (
@@ -128,8 +211,9 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
               Session live
             </div>
             <p className="mt-1 text-[0.78rem] font-mono text-[#8B9BB0]">
-              {activeSession.classes?.name || 'Class'} - started {new Date(activeSession.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {activeSession.classes?.name || 'Class'} - started {formatSessionTime(activeSession.started_at)}
               {activeSession.classes?.room ? ` - ${activeSession.classes.room}` : ''}
+              {activeSession.profiles?.full_name ? ` - opened by ${activeSession.profiles.full_name}` : ''}
             </p>
           </div>
 
@@ -138,6 +222,7 @@ export default function SessionPanel({ activeSession, setActiveSession, session 
             disabled={loading}
             className="rounded-lg border border-red-500/30 px-4 py-2 text-sm font-mono text-red-400 transition-all duration-200 hover:border-red-400 hover:bg-red-500/10 disabled:opacity-40"
           >
+            <Square size={14} strokeWidth={2.2} />
             {loading ? 'Ending...' : 'End session'}
           </button>
         </div>

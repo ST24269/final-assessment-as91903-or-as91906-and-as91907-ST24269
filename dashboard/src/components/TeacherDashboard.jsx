@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Radio } from 'lucide-react'
 import { supabase } from '../api/client'
 import { api } from '../api/client'
 import AttendanceTable from './AttendanceTable'
@@ -37,7 +38,9 @@ export default function TeacherDashboard({ session }) {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-brand">
-          <div className="header-brand-icon">📡</div>
+          <div className="header-brand-icon">
+            <Radio size={18} strokeWidth={2.4} />
+          </div>
           <h1>AttendRFID</h1>
         </div>
         <div className="header-right">

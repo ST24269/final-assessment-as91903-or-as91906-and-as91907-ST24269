@@ -1,13 +1,23 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './api/client'
-import LoginPage from './pages/LoginPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
 import TeacherPage from './pages/TeacherPage'
 import StudentPage from './pages/StudentPage'
 import AdminPage from './pages/AdminPage'
+import AccountPage from './pages/AccountPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
+import Loader from './components/Loader'
+import { canAccessAccountSection } from './config/permissions'
+
+const LOGIN_ROLE_KEY = 'attendrfid-login-role'
+const LOGIN_NOTICE_KEY = 'attendrfid-login-notice'
+
+function writeLoginNotice(notice) {
+  window.sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify(notice))
+}
 
 function ProtectedRoute({ session, profile, role, children }) {
   if (!session) return <Navigate to={`/login/${role}`} replace />
@@ -23,6 +33,27 @@ function ProtectedRoute({ session, profile, role, children }) {
   return children
 }
 
+function AccountRoute({ session, profile, section, setProfile }) {
+  if (!session) return <Navigate to="/login/student" replace />
+
+  if (!profile) {
+    return <Navigate to="/login/student" replace />
+  }
+
+  if (!canAccessAccountSection(profile.role, section)) {
+    return <Navigate to="/account/profile" replace />
+  }
+
+  return (
+    <AccountPage
+      session={session}
+      profile={profile}
+      section={section}
+      setProfile={setProfile}
+    />
+  )
+}
+
 function LoginRoute({ session, profile, children }) {
   if (session && profile) {
     return <Navigate to={`/${profile.role}`} replace />
@@ -36,6 +67,8 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState(null)
+  const userId = session?.user?.id
+  const sessionReady = session !== undefined
 
   useEffect(() => {
     const getInitialSession = async () => {
@@ -63,9 +96,9 @@ export default function App() {
 
   useEffect(() => {
     const fetchProfile = async () => {
-      if (session === undefined) return
+      if (!sessionReady) return
 
-      if (!session) {
+      if (!userId) {
         setProfile(null)
         setProfileLoading(false)
         setProfileError(null)
@@ -79,7 +112,7 @@ export default function App() {
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', session.user.id)
+          .eq('id', userId)
           .maybeSingle()
 
         if (error) {
@@ -90,12 +123,27 @@ export default function App() {
         }
 
         if (!data) {
-          console.error('No profile found for user:', session.user.id)
+          console.error('No profile found for user:', userId)
           setProfileError('No profile found for this user.')
           setProfile(null)
           return
         }
 
+        const expectedRole = window.sessionStorage.getItem(LOGIN_ROLE_KEY)
+        if (expectedRole && data.role !== expectedRole) {
+          writeLoginNotice({
+            type: 'role-mismatch',
+            expectedRole,
+            actualRole: data.role,
+          })
+          await supabase.auth.signOut()
+          window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+          setSession(null)
+          setProfile(null)
+          return
+        }
+
+        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
         setProfile(data)
       } catch (err) {
         console.error('Unexpected profile error:', err)
@@ -107,24 +155,35 @@ export default function App() {
     }
 
     fetchProfile()
-  }, [session])
+  }, [sessionReady, userId])
 
   if (session === undefined) {
-    return <div className="loading">connecting</div>
+    return (
+      <Loader
+        title="Connecting to AttendRFID"
+        subtitle="Checking your saved session"
+      />
+    )
   }
 
   if (session && profileLoading) {
-    return <div className="loading">connecting</div>
+    return (
+      <Loader
+        title="Checking your account"
+        subtitle="Loading your dashboard permissions"
+      />
+    )
   }
 
   if (session && profileError) {
     return (
-      <div className="loading">
+      <div className="loading auth-loading-error">
         <p>{profileError}</p>
         <button
           onClick={async () => {
             await supabase.auth.signOut()
-            window.location.href = '/login'
+            setSession(null)
+            setProfile(null)
           }}
         >
           Sign out
@@ -140,10 +199,12 @@ export default function App() {
           path="/login"
           element={
             <LoginRoute session={session} profile={profile}>
-              <LoginPage />
+              <StudentLoginPage />
             </LoginRoute>
           }
         />
+
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         <Route
           path="/login/admin"
@@ -226,12 +287,31 @@ export default function App() {
           }
         />
 
+        {['profile', 'rfid', 'attendance', 'security', 'settings'].map((section) => (
+          <Route
+            key={section}
+            path={`/account/${section}`}
+            element={
+              <AccountRoute
+                session={session}
+                profile={profile}
+                section={section}
+                setProfile={setProfile}
+              />
+            }
+          />
+        ))}
+
+        <Route path="/account/role" element={<Navigate to="/account/profile" replace />} />
+        <Route path="/account/policies" element={<Navigate to="/account/profile" replace />} />
+        <Route path="/account" element={<Navigate to="/account/profile" replace />} />
+
         <Route
           path="*"
           element={
             session && profile
               ? <Navigate to={`/${profile.role}`} replace />
-              : <Navigate to="/login" replace />
+              : <Navigate to="/login/student" replace />
           }
         />
       </Routes>

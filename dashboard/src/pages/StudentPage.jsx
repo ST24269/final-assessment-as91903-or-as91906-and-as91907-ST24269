@@ -2,13 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../api/client'
 import Layout from '../components/Layout'
 import Card from '../components/Card'
-
-const STATUS_STYLES = {
-  present: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  late: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  absent: 'bg-red-500/10 text-red-400 border-red-500/20',
-  excused: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-}
+import Loader from '../components/Loader'
 
 const STATUS_LABELS = ['present', 'late', 'absent', 'excused']
 
@@ -25,15 +19,15 @@ function formatTime(value) {
 }
 
 function getAttendanceColor(percent) {
-  if (percent === null) return '#4A5568'
-  if (percent >= 90) return '#10D9A0'
-  if (percent >= 75) return '#F5A623'
-  return '#F56565'
+  if (percent === null) return 'var(--text-soft)'
+  if (percent >= 90) return 'var(--green)'
+  if (percent >= 75) return 'var(--primary-2)'
+  return 'var(--red)'
 }
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex rounded-md border px-2 py-1 text-[0.68rem] font-mono uppercase tracking-[0.08em] ${STATUS_STYLES[status] || STATUS_STYLES.absent}`}>
+    <span className={`status-badge status-${status || 'absent'}`}>
       {status || 'unknown'}
     </span>
   )
@@ -151,14 +145,20 @@ export default function StudentPage({ session, profile }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
-        <p className="text-[0.75rem] font-mono uppercase tracking-[0.2em] text-[#1A9B8C]">loading</p>
-      </div>
+      <Loader
+        title="Loading student dashboard"
+        subtitle="Pulling your attendance records"
+      />
     )
   }
 
   return (
-    <Layout email={session.user.email} role="student">
+    <Layout
+      email={session.user.email}
+      name={studentRecord?.full_name || profile?.full_name}
+      role="student"
+      profileId={profile?.id}
+    >
       <section className="portal-hero">
         <div>
           <p className="portal-eyebrow">Student overview</p>

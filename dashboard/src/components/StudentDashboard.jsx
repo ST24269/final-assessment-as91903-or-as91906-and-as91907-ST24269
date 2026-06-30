@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Radio, TriangleAlert } from 'lucide-react'
 import { supabase } from '../api/client'
 
-export default function StudentDashboard({ session, profile }) {
-  const [studentId, setStudentId] = useState(null)
+export default function StudentDashboard({ session }) {
   const [attendance, setAttendance] = useState([])
   const [classes, setClasses] = useState([])
   const [todayStatus, setTodayStatus] = useState(null)
@@ -10,50 +10,58 @@ export default function StudentDashboard({ session, profile }) {
   const [selectedClass, setSelectedClass] = useState('all')
 
   useEffect(() => {
+    let cancelled = false
+
+    const loadData = async () => {
+      const { data: sp } = await supabase
+        .from('student_profiles')
+        .select('student_id')
+        .eq('profile_id', session.user.id)
+        .single()
+
+      if (cancelled) return
+
+      if (!sp) {
+        setLoading(false)
+        return
+      }
+
+      const { data: enrolments } = await supabase
+        .from('enrolments')
+        .select('classes(id, name, subject, room)')
+        .eq('student_id', sp.student_id)
+
+      if (cancelled) return
+
+      const classList = enrolments?.map(e => e.classes) || []
+      setClasses(classList)
+
+      const { data: records } = await supabase
+        .from('attendance')
+        .select(`
+          *,
+          sessions(started_at, classes(name, subject))
+        `)
+        .eq('student_id', sp.student_id)
+        .order('scanned_at', { ascending: false })
+
+      if (cancelled) return
+
+      setAttendance(records || [])
+
+      const today = new Date().toISOString().split('T')[0]
+      const todayRecord = records?.find(r =>
+        r.scanned_at?.startsWith(today)
+      )
+      setTodayStatus(todayRecord?.status || null)
+
+      setLoading(false)
+    }
+
     loadData()
-  }, [])
 
-  const loadData = async () => {
-    // Get student record linked to this auth user
-    const { data: sp } = await supabase
-      .from('student_profiles')
-      .select('student_id')
-      .eq('profile_id', session.user.id)
-      .single()
-
-    if (!sp) return setLoading(false)
-    setStudentId(sp.student_id)
-
-    // Get enrolled classes
-    const { data: enrolments } = await supabase
-      .from('enrolments')
-      .select('classes(id, name, subject, room)')
-      .eq('student_id', sp.student_id)
-
-    const classList = enrolments?.map(e => e.classes) || []
-    setClasses(classList)
-
-    // Get all attendance records
-    const { data: records } = await supabase
-      .from('attendance')
-      .select(`
-        *,
-        sessions(started_at, classes(name, subject))
-      `)
-      .eq('student_id', sp.student_id)
-      .order('scanned_at', { ascending: false })
-
-    setAttendance(records || [])
-
-    // Check today's status
-    const today = new Date().toISOString().split('T')[0]
-    const todayRecord = records?.find(r =>
-      r.scanned_at?.startsWith(today)
-    )
-    setTodayStatus(todayRecord?.status || null)
-
-    setLoading(false)
-  }
+    return () => { cancelled = true }
+  }, [session.user.id])
 
   const handleSignOut = () => supabase.auth.signOut()
 
@@ -97,7 +105,9 @@ export default function StudentDashboard({ session, profile }) {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-brand">
-          <div className="header-brand-icon">📡</div>
+          <div className="header-brand-icon">
+            <Radio size={18} strokeWidth={2.4} />
+          </div>
           <h1>AttendRFID</h1>
         </div>
         <div className="header-right">
@@ -140,7 +150,7 @@ export default function StudentDashboard({ session, profile }) {
                 <div key={c.id}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                     <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>
-                      {c.name} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>— {c.subject}</span>
+                      {c.name} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>- {c.subject}</span>
                     </span>
                     <span style={{
                       fontFamily: 'var(--mono)',
@@ -149,7 +159,7 @@ export default function StudentDashboard({ session, profile }) {
                         c.pct >= 90 ? 'var(--green)' :
                         c.pct >= 75 ? 'var(--amber)' : 'var(--red)'
                     }}>
-                      {c.pct === null ? '—' : `${c.pct}%`}
+                      {c.pct === null ? '-' : `${c.pct}%`}
                     </span>
                   </div>
                   <div style={{
@@ -209,7 +219,7 @@ export default function StudentDashboard({ session, profile }) {
                 {filtered.map(record => (
                   <tr key={record.id} className={record.flagged ? 'flagged-row' : ''}>
                     <td style={{ fontWeight: 500 }}>
-                      {record.sessions?.classes?.name || '—'}
+                      {record.sessions?.classes?.name || '-'}
                     </td>
                     <td className="student-id">
                       {new Date(record.scanned_at).toLocaleDateString()}
@@ -224,7 +234,10 @@ export default function StudentDashboard({ session, profile }) {
                     </td>
                     <td>
                       {record.flagged && (
-                        <span className="flag-badge">⚠ {record.flag_reason || 'flagged'}</span>
+                        <span className="flag-badge">
+                          <TriangleAlert size={14} strokeWidth={2.2} />
+                          {record.flag_reason || 'flagged'}
+                        </span>
                       )}
                       {record.manual_override && !record.flagged && (
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>

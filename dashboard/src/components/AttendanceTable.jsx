@@ -2,13 +2,6 @@ import { useMemo, useState } from 'react'
 import { api } from '../api/client'
 import Card from './Card'
 
-const STATUS = {
-  present: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  late: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  absent: 'bg-red-500/10 text-red-400 border-red-500/20',
-  excused: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-}
-
 const STATUS_OPTIONS = ['present', 'late', 'absent', 'excused']
 
 function formatTime(value) {
@@ -17,7 +10,7 @@ function formatTime(value) {
 
 function StatusBadge({ status }) {
   return (
-    <span className={`inline-flex rounded border px-2 py-1 text-[0.68rem] font-mono uppercase tracking-[0.08em] ${STATUS[status] || STATUS.absent}`}>
+    <span className={`status-badge status-${status || 'absent'}`}>
       {status || 'unknown'}
     </span>
   )

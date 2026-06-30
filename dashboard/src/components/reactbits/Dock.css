@@ -1,0 +1,96 @@
+.dock-outer {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.dock-panel {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  width: fit-content;
+  max-width: calc(100vw - 1.2rem);
+  align-items: flex-end;
+  gap: 0.55rem;
+  padding: 0 0.55rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--surface-panel), transparent 8%);
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+.dock-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  outline: none;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.dock-item:hover,
+.dock-item:focus-visible,
+.dock-item.is-active {
+  border-color: color-mix(in srgb, var(--primary), transparent 55%);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.dock-item:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary), transparent 78%);
+}
+
+.dock-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dock-label {
+  position: absolute;
+  top: -1.55rem;
+  left: 50%;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-panel);
+  color: var(--text);
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: pre;
+  box-shadow: var(--shadow-soft);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 0.35rem);
+  transition: opacity 500ms ease, transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.dock-item:hover .dock-label,
+.dock-item:focus-visible .dock-label {
+  opacity: 1;
+  transform: translate(-50%, -0.2rem);
+}
+
+@media (max-width: 640px) {
+  .dock-panel {
+    gap: 0.4rem;
+    padding-inline: 0.45rem;
+  }
+}
