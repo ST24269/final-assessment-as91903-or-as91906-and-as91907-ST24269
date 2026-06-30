@@ -1,4 +1,5 @@
-require('dotenv').config()
+const path = require('path')
+require('dotenv').config({ path: path.resolve(__dirname, '../.env'), quiet: true })
 const express = require('express')
 const cors = require('cors')
 
@@ -12,6 +13,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+app.use('/api/auth', require('./routes/auth'))
 app.use('/api/students', require('./routes/students'))
 app.use('/api/sessions', require('./routes/sessions'))
 app.use('/api/attendance', require('./routes/attendance'))
