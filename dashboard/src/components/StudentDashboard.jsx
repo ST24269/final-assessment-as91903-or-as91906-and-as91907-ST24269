@@ -17,7 +17,7 @@ export default function StudentDashboard({ session }) {
         .from('student_profiles')
         .select('student_id')
         .eq('profile_id', session.user.id)
-        .single()
+        .maybeSingle()
 
       if (cancelled) return
 

@@ -6,17 +6,29 @@ import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
 import TeacherPage from './pages/TeacherPage'
 import StudentPage from './pages/StudentPage'
+import StudentAppealsPage from './pages/StudentAppealsPage'
 import AdminPage from './pages/AdminPage'
 import AccountPage from './pages/AccountPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import PublicHomePage from './pages/PublicHomePage'
+import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
 import Loader from './components/Loader'
 import { canAccessAccountSection } from './config/permissions'
 
 const LOGIN_ROLE_KEY = 'attendrfid-login-role'
 const LOGIN_NOTICE_KEY = 'attendrfid-login-notice'
+const VALID_ROLES = ['student', 'teacher', 'admin']
+
+function isValidRole(role) {
+  return VALID_ROLES.includes(role)
+}
 
 function writeLoginNotice(notice) {
   window.sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify(notice))
+}
+
+function clearLoginIntent() {
+  window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
 }
 
 function ProtectedRoute({ session, profile, role, children }) {
@@ -24,6 +36,10 @@ function ProtectedRoute({ session, profile, role, children }) {
 
   if (!profile) {
     return <Navigate to={`/login/${role}`} replace />
+  }
+
+  if (!isValidRole(profile.role)) {
+    return <Navigate to="/login/student" replace />
   }
 
   if (profile.role !== role) {
@@ -37,6 +53,10 @@ function AccountRoute({ session, profile, section, setProfile }) {
   if (!session) return <Navigate to="/login/student" replace />
 
   if (!profile) {
+    return <Navigate to="/login/student" replace />
+  }
+
+  if (!isValidRole(profile.role)) {
     return <Navigate to="/login/student" replace />
   }
 
@@ -54,9 +74,36 @@ function AccountRoute({ session, profile, section, setProfile }) {
   )
 }
 
-function LoginRoute({ session, profile, children }) {
+function LoginRoute({ session, profile, role, setSession, setProfile, children }) {
+  const switchingRoles = Boolean(session && profile && role && profile.role !== role)
+
+  useEffect(() => {
+    if (!switchingRoles) return
+
+    writeLoginNotice({
+      type: 'role-mismatch',
+      expectedRole: role,
+      actualRole: profile.role,
+    })
+    clearLoginIntent()
+
+    supabase.auth.signOut().finally(() => {
+      setSession(null)
+      setProfile(null)
+    })
+  }, [profile?.role, role, setProfile, setSession, switchingRoles])
+
   if (session && profile) {
-    return <Navigate to={`/${profile.role}`} replace />
+    if (switchingRoles) {
+      return (
+        <Loader
+          title="Switching sign-in role"
+          subtitle={`Signing out of the ${profile.role} session`}
+        />
+      )
+    }
+
+    return <Navigate to={`/${isValidRole(profile.role) ? profile.role : 'student'}`} replace />
   }
 
   return children
@@ -87,7 +134,18 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearLoginIntent()
+        setProfile(null)
+        setProfileError(null)
+      }
+
+      if (event === 'SIGNED_IN') {
+        setProfile(null)
+        setProfileError(null)
+      }
+
       setSession(session ?? null)
     })
 
@@ -129,6 +187,19 @@ export default function App() {
           return
         }
 
+        if (!isValidRole(data.role)) {
+          console.error('Invalid profile role:', data.role)
+          writeLoginNotice({
+            type: 'invalid-role',
+            actualRole: data.role,
+          })
+          await supabase.auth.signOut()
+          clearLoginIntent()
+          setSession(null)
+          setProfile(null)
+          return
+        }
+
         const expectedRole = window.sessionStorage.getItem(LOGIN_ROLE_KEY)
         if (expectedRole && data.role !== expectedRole) {
           writeLoginNotice({
@@ -137,13 +208,13 @@ export default function App() {
             actualRole: data.role,
           })
           await supabase.auth.signOut()
-          window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+          clearLoginIntent()
           setSession(null)
           setProfile(null)
           return
         }
 
-        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        clearLoginIntent()
         setProfile(data)
       } catch (err) {
         console.error('Unexpected profile error:', err)
@@ -166,7 +237,7 @@ export default function App() {
     )
   }
 
-  if (session && profileLoading) {
+  if (session && (profileLoading || (!profile && !profileError))) {
     return (
       <Loader
         title="Checking your account"
@@ -195,10 +266,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<PublicHomePage />} />
+        <Route path="/home" element={<PublicHomePage />} />
+        <Route path="/documentation" element={<ProjectDocumentationPage />} />
+        <Route path="/project" element={<ProjectDocumentationPage />} />
+
         <Route
           path="/login"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="student" setSession={setSession} setProfile={setProfile}>
               <StudentLoginPage />
             </LoginRoute>
           }
@@ -209,7 +285,7 @@ export default function App() {
         <Route
           path="/login/admin"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="admin" setSession={setSession} setProfile={setProfile}>
               <AdminLoginPage />
             </LoginRoute>
           }
@@ -218,7 +294,7 @@ export default function App() {
         <Route
           path="/admin/login"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="admin" setSession={setSession} setProfile={setProfile}>
               <AdminLoginPage />
             </LoginRoute>
           }
@@ -227,7 +303,7 @@ export default function App() {
         <Route
           path="/login/teacher"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="teacher" setSession={setSession} setProfile={setProfile}>
               <TeacherLoginPage />
             </LoginRoute>
           }
@@ -236,7 +312,7 @@ export default function App() {
         <Route
           path="/teacher/login"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="teacher" setSession={setSession} setProfile={setProfile}>
               <TeacherLoginPage />
             </LoginRoute>
           }
@@ -245,7 +321,7 @@ export default function App() {
         <Route
           path="/login/student"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="student" setSession={setSession} setProfile={setProfile}>
               <StudentLoginPage />
             </LoginRoute>
           }
@@ -254,7 +330,7 @@ export default function App() {
         <Route
           path="/student/login"
           element={
-            <LoginRoute session={session} profile={profile}>
+            <LoginRoute session={session} profile={profile} role="student" setSession={setSession} setProfile={setProfile}>
               <StudentLoginPage />
             </LoginRoute>
           }
@@ -274,6 +350,15 @@ export default function App() {
           element={
             <ProtectedRoute session={session} profile={profile} role="student">
               <StudentPage session={session} profile={profile} />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/student/appeals"
+          element={
+            <ProtectedRoute session={session} profile={profile} role="student">
+              <StudentAppealsPage session={session} profile={profile} />
             </ProtectedRoute>
           }
         />
@@ -310,7 +395,7 @@ export default function App() {
           path="*"
           element={
             session && profile
-              ? <Navigate to={`/${profile.role}`} replace />
+              ? <Navigate to={`/${isValidRole(profile.role) ? profile.role : 'student'}`} replace />
               : <Navigate to="/login/student" replace />
           }
         />

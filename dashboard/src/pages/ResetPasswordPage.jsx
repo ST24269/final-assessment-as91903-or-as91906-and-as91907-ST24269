@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { KeyRound } from 'lucide-react'
 import { supabase } from '../api/client'
 import AppFooter from '../components/AppFooter'
 import ThemeToggle from '../components/ThemeToggle'
 
 export default function ResetPasswordPage() {
+  const [searchParams] = useSearchParams()
+  const role = ['student', 'teacher', 'admin'].includes(searchParams.get('role'))
+    ? searchParams.get('role')
+    : 'student'
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -41,6 +45,7 @@ export default function ResetPasswordPage() {
 
     setPassword('')
     setConfirmPassword('')
+    await supabase.auth.signOut()
     setMessage('Password reset. You can now sign in with your new password.')
   }
 
@@ -97,8 +102,8 @@ export default function ResetPasswordPage() {
             {loading ? 'Updating...' : 'Reset password'}
           </button>
 
-          <Link className="login-notice-link" to="/login/student">
-            Back to student sign in
+          <Link className="login-notice-link" to={`/login/${role}`}>
+            Back to {role} sign in
           </Link>
         </form>
 

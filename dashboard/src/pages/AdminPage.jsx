@@ -2,6 +2,10 @@ import { useState } from 'react'
 import {
   BarChart3,
   BookOpen,
+  CalendarDays,
+  Link2,
+  Mail,
+  MessageSquareWarning,
   Radio,
   UserRound,
   UsersRound,
@@ -16,6 +20,10 @@ import ClassesManager from '../components/admin/ClassesManager'
 import ReadersManager from '../components/admin/ReadersManager'
 import AttendanceOverview from '../components/admin/AttendanceOverview'
 import UsersManager from '../components/admin/UsersManager'
+import AppealsManager from '../components/admin/AppealsManager'
+import TimetableManager from '../components/admin/TimetableManager'
+import StudentClassLinksManager from '../components/admin/StudentClassLinksManager'
+import AdminEmailManager from '../components/admin/AdminEmailManager'
 
 const TABS = [
   {
@@ -25,16 +33,40 @@ const TABS = [
     description: 'Manage records, login accounts, RFID cards, and status',
   },
   {
+    id: 'classes',
+    label: 'Class Management',
+    Icon: BookOpen,
+    description: 'Create classes, subjects, rooms, and teachers',
+  },
+  {
+    id: 'linking',
+    label: 'Student-Class Linking',
+    Icon: Link2,
+    description: 'Link students to classes and teachers',
+  },
+  {
+    id: 'timetable',
+    label: 'Timetable Management',
+    Icon: CalendarDays,
+    description: 'Manage class timetable periods',
+  },
+  {
+    id: 'appeals',
+    label: 'Attendance Appeals',
+    Icon: MessageSquareWarning,
+    description: 'Review and correct attendance appeals',
+  },
+  {
+    id: 'communication',
+    label: 'Email / Communication',
+    Icon: Mail,
+    description: 'Send messages to student recipients',
+  },
+  {
     id: 'analytics',
     label: 'Analytics',
     Icon: BarChart3,
     description: 'Student attendance insights',
-  },
-  {
-    id: 'classes',
-    label: 'Classes',
-    Icon: BookOpen,
-    description: 'Organise class groups',
   },
   {
     id: 'readers',
@@ -137,6 +169,10 @@ export default function AdminPage({ session, profile }) {
             <div className="admin-panel-content">
               {tab === 'students' && <StudentsManager />}
               {tab === 'classes' && <ClassesManager />}
+              {tab === 'linking' && <StudentClassLinksManager />}
+              {tab === 'appeals' && <AppealsManager />}
+              {tab === 'timetable' && <TimetableManager />}
+              {tab === 'communication' && <AdminEmailManager />}
               {tab === 'readers' && <ReadersManager />}
               {tab === 'analytics' && <AttendanceOverview />}
               {tab === 'users' && <UsersManager />}

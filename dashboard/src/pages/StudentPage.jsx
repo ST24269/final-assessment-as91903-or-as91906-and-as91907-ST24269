@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../api/client'
+import { Link } from 'react-router-dom'
+import { AlertCircle, ArrowRight, CalendarDays, Clock3, MessageSquareWarning } from 'lucide-react'
+import { api, supabase } from '../api/client'
 import Layout from '../components/Layout'
 import Card from '../components/Card'
 import Loader from '../components/Loader'
@@ -18,6 +20,29 @@ function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
 }
 
+function timeLabel(value) {
+  return value ? String(value).slice(0, 5) : '--:--'
+}
+
+function dayOfWeekFor(date = new Date()) {
+  const day = date.getDay()
+  return day === 0 ? 7 : day
+}
+
+function periodDate(timeString) {
+  if (!timeString) return null
+  const [hour = '0', minute = '0', second = '0'] = String(timeString).split(':')
+  const now = new Date()
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  )
+}
+
 function getAttendanceColor(percent) {
   if (percent === null) return 'var(--text-soft)'
   if (percent >= 90) return 'var(--green)'
@@ -33,10 +58,28 @@ function StatusBadge({ status }) {
   )
 }
 
+function classLabel(classItem) {
+  if (!classItem) return 'Class'
+  return `${classItem.name || 'Class'}${classItem.subject ? ` - ${classItem.subject}` : ''}`
+}
+
+function periodClassLabel(period) {
+  return period?.class?.name || period?.subject || 'Class'
+}
+
+function periodSubject(period) {
+  return period?.subject || period?.class?.subject || 'Subject not set'
+}
+
+function periodTeacher(period) {
+  return period?.teacher?.full_name || period?.class?.profiles?.full_name || 'Teacher not assigned'
+}
+
 export default function StudentPage({ session, profile }) {
   const [studentRecord, setStudentRecord] = useState(null)
   const [attendance, setAttendance] = useState([])
   const [classes, setClasses] = useState([])
+  const [timetable, setTimetable] = useState({ periods: [], todayPeriods: [], currentClass: null, nextClass: null })
   const [selectedClass, setSelectedClass] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -51,7 +94,19 @@ export default function StudentPage({ session, profile }) {
 
       const { data: linkedStudent, error: linkError } = await supabase
         .from('student_profiles')
-        .select('student_id, students(full_name, student_number, year_level)')
+        .select(`
+          student_id,
+          students(
+            id,
+            full_name,
+            student_number,
+            year_level,
+            kainga,
+            form_group,
+            la_teacher_id,
+            profiles(full_name, email)
+          )
+        `)
         .eq('profile_id', session.user.id)
         .maybeSingle()
 
@@ -63,7 +118,7 @@ export default function StudentPage({ session, profile }) {
         return
       }
 
-      if (!linkedStudent) {
+      if (!linkedStudent?.student_id) {
         setError('This account is not linked to a student record yet.')
         setLoading(false)
         return
@@ -71,16 +126,21 @@ export default function StudentPage({ session, profile }) {
 
       setStudentRecord(linkedStudent.students || null)
 
-      const [{ data: enrolments, error: enrolmentError }, { data: records, error: attendanceError }] = await Promise.all([
+      const [
+        { data: enrolments, error: enrolmentError },
+        { data: records, error: attendanceError },
+        timetableData,
+      ] = await Promise.all([
         supabase
           .from('enrolments')
-          .select('classes(id, name, subject, room)')
+          .select('classes(id, name, subject, room, teacher_id, profiles(full_name, email))')
           .eq('student_id', linkedStudent.student_id),
         supabase
           .from('attendance')
-          .select('*, sessions(started_at, classes(id, name, subject, room))')
+          .select('*, sessions(id, started_at, classes(id, name, subject, room))')
           .eq('student_id', linkedStudent.student_id)
           .order('scanned_at', { ascending: false }),
+        api.get('/api/timetable/me'),
       ])
 
       if (cancelled) return
@@ -93,6 +153,9 @@ export default function StudentPage({ session, profile }) {
 
       setClasses(enrolments?.map((row) => row.classes).filter(Boolean) || [])
       setAttendance(records || [])
+      setTimetable(timetableData?.error
+        ? { periods: [], todayPeriods: [], currentClass: null, nextClass: null }
+        : (timetableData || { periods: [], todayPeriods: [], currentClass: null, nextClass: null }))
       setLoading(false)
     }
 
@@ -120,6 +183,29 @@ export default function StudentPage({ session, profile }) {
     }
   }, [attendance])
 
+  const todayPeriods = useMemo(() => {
+    const provided = timetable.todayPeriods?.length ? timetable.todayPeriods : timetable.periods
+    return (provided || [])
+      .filter((period) => period.day_of_week === dayOfWeekFor())
+      .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
+  }, [timetable])
+
+  const currentAndNext = useMemo(() => {
+    const now = new Date()
+    const enriched = todayPeriods.map((period) => ({
+      ...period,
+      startDate: periodDate(period.start_time),
+      endDate: periodDate(period.end_time),
+    }))
+    const currentClass = enriched.find((period) => period.startDate <= now && period.endDate > now) || null
+    const nextClass = enriched.find((period) => period.startDate > now) || null
+
+    return {
+      currentClass: currentClass || timetable.currentClass || null,
+      nextClass: nextClass || timetable.nextClass || null,
+    }
+  }, [todayPeriods, timetable.currentClass, timetable.nextClass])
+
   const classStats = useMemo(() => classes.map((classItem) => {
     const records = attendance.filter((record) => record.sessions?.classes?.id === classItem.id)
     const counted = records.filter((record) => record.status !== 'excused')
@@ -133,7 +219,6 @@ export default function StudentPage({ session, profile }) {
       total: counted.length,
       percent,
       lastStatus: lastRecord?.status || null,
-      lastScannedAt: lastRecord?.scanned_at || null,
     }
   }), [attendance, classes])
 
@@ -143,11 +228,20 @@ export default function StudentPage({ session, profile }) {
     return classMatches && statusMatches
   }), [attendance, selectedClass, statusFilter])
 
+  const profileRows = [
+    ['Email', session.user.email],
+    ['Student ID', studentRecord?.student_number || 'Not set'],
+    ['Year', studentRecord?.year_level ? `Year ${studentRecord.year_level}` : 'Not set'],
+    ['Kainga', studentRecord?.kainga || 'Not set'],
+    ['Form / LA class', studentRecord?.form_group || 'Not set'],
+    ['LA teacher', studentRecord?.profiles?.full_name || 'Not assigned'],
+  ]
+
   if (loading) {
     return (
       <Loader
         title="Loading student dashboard"
-        subtitle="Pulling your attendance records"
+        subtitle="Pulling your profile, classes, and timetable"
       />
     )
   }
@@ -161,20 +255,27 @@ export default function StudentPage({ session, profile }) {
     >
       <section className="portal-hero">
         <div>
-          <p className="portal-eyebrow">Student overview</p>
+          <p className="portal-eyebrow">Student dashboard</p>
           <h1 className="portal-title">
             {studentRecord?.full_name || profile?.full_name || 'Student'}
           </h1>
           <p className="portal-subtitle">
-            {studentRecord?.student_number ? `Student ID ${studentRecord.student_number}` : session.user.email}
+            {studentRecord?.kainga || 'Kainga not set'}
+            {studentRecord?.form_group ? ` - ${studentRecord.form_group}` : ''}
             {studentRecord?.year_level ? ` - Year ${studentRecord.year_level}` : ''}
           </p>
+          <div className="student-action-row">
+            <Link className="student-action-link" to="/student/appeals">
+              <MessageSquareWarning size={16} strokeWidth={2.2} />
+              Submit Attendance Appeal
+            </Link>
+          </div>
         </div>
 
         <div className="portal-side-card">
           <span>Today</span>
           {todayRecord ? (
-            <div className="mt-3 flex items-center gap-3">
+            <div className="student-today-status">
               <StatusBadge status={todayRecord.status} />
               <strong>{formatTime(todayRecord.scanned_at)}</strong>
             </div>
@@ -186,6 +287,7 @@ export default function StudentPage({ session, profile }) {
 
       {error && (
         <div className="portal-alert">
+          <AlertCircle size={18} strokeWidth={2.2} />
           {error}
         </div>
       )}
@@ -199,6 +301,39 @@ export default function StudentPage({ session, profile }) {
         </Card>
       ) : (
         <>
+          <section className="student-dashboard-grid">
+            <Card title="Profile summary">
+              <div className="student-profile-list">
+                {profileRows.map(([label, value]) => (
+                  <div key={label} className="student-profile-row">
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card title="Linked classes">
+              {classes.length === 0 ? (
+                <div className="portal-empty">
+                  <strong>No classes linked yet.</strong>
+                  <span>An admin can link your classes from Student-Class Linking.</span>
+                </div>
+              ) : (
+                <div className="student-class-list">
+                  {classes.map((classItem) => (
+                    <div key={classItem.id} className="student-class-card">
+                      <strong>{classLabel(classItem)}</strong>
+                      <span>
+                        {classItem.room ? `Room ${classItem.room}` : 'Room not set'} - {classItem.profiles?.full_name || 'Teacher not assigned'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </section>
+
           <section className="portal-stat-grid">
             {[
               ['Attendance rate', overview.rate === null ? 'No data' : `${overview.rate}%`, `${overview.attended}/${overview.total} counted`],
@@ -214,39 +349,87 @@ export default function StudentPage({ session, profile }) {
             ))}
           </section>
 
+          <section className="portal-section">
+            <div className="portal-section-header">
+              <div>
+                <p>Today&apos;s timetable</p>
+                <h2 className="student-section-title">{new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</h2>
+              </div>
+            </div>
+            <div className="student-next-class">
+              <div className="portal-side-card">
+                <span>{currentAndNext.currentClass ? 'Current class' : 'Next class'}</span>
+                {currentAndNext.currentClass || currentAndNext.nextClass ? (
+                  (() => {
+                    const period = currentAndNext.currentClass || currentAndNext.nextClass
+                    return (
+                      <>
+                        <strong>{periodClassLabel(period)}</strong>
+                        <p>{periodSubject(period)}</p>
+                        <p>{periodTeacher(period)}</p>
+                        <p>
+                          {timeLabel(period.start_time)} - {timeLabel(period.end_time)}
+                          {period.period_number ? ` - Period ${period.period_number}` : ''}
+                        </p>
+                        <p>{period.room ? `Room ${period.room}` : 'Room not set'}</p>
+                      </>
+                    )
+                  })()
+                ) : (
+                  <strong>No more classes scheduled for today.</strong>
+                )}
+              </div>
+              <div className="student-timetable-list">
+                {todayPeriods.length === 0 ? (
+                  <div className="portal-empty">
+                    <strong>No timetable periods today.</strong>
+                    <span>Your timetable appears here once an admin schedules periods for your linked classes.</span>
+                  </div>
+                ) : (
+                  todayPeriods.map((period) => (
+                    <div key={period.id} className="student-timetable-row">
+                      <strong>
+                        <Clock3 size={15} strokeWidth={2.2} />
+                        {timeLabel(period.start_time)}-{timeLabel(period.end_time)}
+                        {period.period_number ? ` - Period ${period.period_number}` : ''}
+                      </strong>
+                      <span>
+                        {periodClassLabel(period)} - {periodSubject(period)}
+                        {period.room ? ` - Room ${period.room}` : ''}
+                      </span>
+                      <span>{periodTeacher(period)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
           <Card title="Class attendance">
             {classStats.length === 0 ? (
-              <p className="text-[0.78rem] font-mono text-[#4A5568]">No classes linked to this student.</p>
+              <p className="empty-state">No classes linked to this student.</p>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="student-class-stat-grid">
                 {classStats.map((classItem) => {
                   const color = getAttendanceColor(classItem.percent)
 
                   return (
-                    <div key={classItem.id} className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-sm font-bold text-white">{classItem.name}</h2>
-                          <p className="mt-1 text-[0.78rem] text-[#8B9BB0]">
-                            {classItem.subject}{classItem.room ? ` - ${classItem.room}` : ''}
-                          </p>
-                        </div>
-                        <span className="font-mono text-sm" style={{ color }}>
-                          {classItem.percent === null ? 'No data' : `${classItem.percent}%`}
+                    <div key={classItem.id} className="student-class-stat">
+                      <div>
+                        <strong>{classItem.name}</strong>
+                        <span>
+                          {classItem.subject}
+                          {classItem.room ? ` - Room ${classItem.room}` : ''}
+                          {classItem.profiles?.full_name ? ` - ${classItem.profiles.full_name}` : ''}
                         </span>
                       </div>
-
-                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#1c2330]">
-                        <div
-                          className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${classItem.percent || 0}%`, background: color }}
-                        />
+                      <span className="student-class-percent" style={{ color }}>
+                        {classItem.percent === null ? 'No data' : `${classItem.percent}%`}
+                      </span>
+                      <div className="student-progress-track">
+                        <div style={{ width: `${classItem.percent || 0}%`, background: color }} />
                       </div>
-
-                      <div className="mt-3 flex items-center justify-between text-[0.72rem] font-mono text-[#8B9BB0]">
-                        <span>{classItem.attended}/{classItem.total} attended</span>
-                        <span>{classItem.lastStatus ? `Last: ${classItem.lastStatus}` : 'No scans yet'}</span>
-                      </div>
+                      <small>{classItem.attended}/{classItem.total} attended - {classItem.lastStatus ? `Last: ${classItem.lastStatus}` : 'No scans yet'}</small>
                     </div>
                   )
                 })}
@@ -255,24 +438,16 @@ export default function StudentPage({ session, profile }) {
           </Card>
 
           <Card
-            title={`History (${filteredAttendance.length})`}
+            title={`Attendance history (${filteredAttendance.length})`}
             action={
-              <div className="flex flex-wrap gap-2">
-                <select
-                  className="rounded-md border border-white/[0.06] bg-[#1c2330] px-2 py-1 text-[0.75rem] font-mono text-white outline-none"
-                  value={selectedClass}
-                  onChange={(event) => setSelectedClass(event.target.value)}
-                >
+              <div className="student-filter-row">
+                <select className="session-select" value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)}>
                   <option value="all">All classes</option>
                   {classes.map((classItem) => (
                     <option key={classItem.id} value={classItem.id}>{classItem.name}</option>
                   ))}
                 </select>
-                <select
-                  className="rounded-md border border-white/[0.06] bg-[#1c2330] px-2 py-1 text-[0.75rem] font-mono text-white outline-none"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                >
+                <select className="session-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                   <option value="all">All statuses</option>
                   {STATUS_LABELS.map((status) => (
                     <option key={status} value={status}>{status}</option>
@@ -282,30 +457,28 @@ export default function StudentPage({ session, profile }) {
             }
           >
             {filteredAttendance.length === 0 ? (
-              <p className="text-[0.78rem] font-mono text-[#4A5568]">No attendance records match this filter.</p>
+              <p className="empty-state">No attendance records match this filter.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+              <div className="student-table-wrap">
+                <table className="attendance-table">
                   <thead>
-                    <tr className="border-b border-white/[0.06]">
+                    <tr>
                       {['Class', 'Date', 'Time', 'Status', 'Note'].map((heading) => (
-                        <th key={heading} className="px-2 pb-3 text-left text-[0.65rem] font-mono uppercase tracking-[0.12em] text-[#4A5568]">
-                          {heading}
-                        </th>
+                        <th key={heading}>{heading}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {filteredAttendance.map((record) => (
-                      <tr key={record.id} className="border-b border-white/[0.03] transition-colors hover:bg-white/[0.015]">
-                        <td className="px-2 py-3">
-                          <span className="text-sm font-medium text-white">{record.sessions?.classes?.name || 'Unknown class'}</span>
-                          <span className="ml-2 text-[0.72rem] text-[#8B9BB0]">{record.sessions?.classes?.subject}</span>
+                      <tr key={record.id}>
+                        <td>
+                          <strong>{record.sessions?.classes?.name || 'Unknown class'}</strong>
+                          <span className="student-table-sub">{record.sessions?.classes?.subject}</span>
                         </td>
-                        <td className="px-2 py-3 text-[0.78rem] font-mono text-[#8B9BB0]">{formatDate(record.scanned_at)}</td>
-                        <td className="px-2 py-3 text-[0.78rem] font-mono text-[#8B9BB0]">{formatTime(record.scanned_at)}</td>
-                        <td className="px-2 py-3"><StatusBadge status={record.status} /></td>
-                        <td className="px-2 py-3 text-[0.72rem] font-mono text-[#8B9BB0]">
+                        <td className="student-id">{formatDate(record.scanned_at)}</td>
+                        <td className="student-id">{formatTime(record.scanned_at)}</td>
+                        <td><StatusBadge status={record.status} /></td>
+                        <td className="student-id">
                           {record.flagged ? `Flagged: ${record.flag_reason || 'review needed'}` : record.manual_override ? 'Edited by staff' : 'RFID scan'}
                         </td>
                       </tr>
@@ -315,6 +488,12 @@ export default function StudentPage({ session, profile }) {
               </div>
             )}
           </Card>
+
+          <Link className="student-action-link is-secondary" to="/student/appeals">
+            <CalendarDays size={16} strokeWidth={2.2} />
+            Open appeals page
+            <ArrowRight size={16} strokeWidth={2.2} />
+          </Link>
         </>
       )}
     </Layout>

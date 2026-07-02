@@ -4,6 +4,7 @@ import { supabase } from '../api/client'
 import { api } from '../api/client'
 import Layout from '../components/Layout'
 import AttendanceTable from '../components/AttendanceTable'
+import AppealsPanel from '../components/AppealsPanel'
 import SessionPanel from '../components/SessionPanel'
 import LiveFeed from '../components/LiveFeed'
 
@@ -132,6 +133,7 @@ export default function TeacherPage({ session, profile }) {
   return (
     <Layout email={session.user.email} name={profile?.full_name} role="teacher" profileId={profile?.id}>
       <SessionPanel activeSession={activeSession} setActiveSession={handleActiveSessionChange} />
+      <AppealsPanel mode="teacher" />
 
       {!activeSession ? (
         <section className="portal-section">

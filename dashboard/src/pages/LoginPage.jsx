@@ -8,6 +8,7 @@ import ThemeToggle from '../components/ThemeToggle'
 
 const LOGIN_ROLE_KEY = 'attendrfid-login-role'
 const LOGIN_NOTICE_KEY = 'attendrfid-login-notice'
+const VALID_ROLES = ['student', 'teacher', 'admin']
 
 const ROLE_COPY = {
   student: {
@@ -38,6 +39,7 @@ function readStoredLoginNotice(role) {
 
   try {
     const parsedNotice = JSON.parse(storedNotice)
+    if (parsedNotice.type === 'invalid-role') return parsedNotice
     return parsedNotice.expectedRole === role ? parsedNotice : null
   } catch {
     return null
@@ -69,6 +71,7 @@ export default function LoginPage({ role = 'student' }) {
     setLoading(true)
     setError(null)
     setRoleNotice(null)
+    window.sessionStorage.removeItem(LOGIN_NOTICE_KEY)
     window.sessionStorage.setItem(LOGIN_ROLE_KEY, role)
 
     try {
@@ -93,6 +96,16 @@ export default function LoginPage({ role = 'student' }) {
         await supabase.auth.signOut()
         window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
         setError('No profile is linked to this login. Ask an admin to check your account.')
+        return
+      }
+
+      if (!VALID_ROLES.includes(profile.role)) {
+        await supabase.auth.signOut()
+        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        setRoleNotice({
+          type: 'invalid-role',
+          actualRole: profile.role,
+        })
         return
       }
 
@@ -130,7 +143,7 @@ export default function LoginPage({ role = 'student' }) {
     setError(null)
     setResetMessage(null)
 
-    const resetResult = await api.post('/api/auth/forgot-password', { email: trimmedEmail })
+    const resetResult = await api.post('/api/auth/forgot-password', { email: trimmedEmail, role })
 
     setResetLoading(false)
 
@@ -183,6 +196,15 @@ export default function LoginPage({ role = 'student' }) {
               <Link className="login-notice-link" to={`/login/${roleNotice.actualRole}`}>
                 Open {ROLE_COPY[roleNotice.actualRole]?.label || roleNotice.actualRole} sign in
               </Link>
+            </div>
+          )}
+
+          {roleNotice?.type === 'invalid-role' && (
+            <div className="login-notice" role="alert">
+              <p>
+                That account has an unsupported role value: {roleNotice.actualRole || 'unknown'}.
+                Ask an admin to update the profile role before signing in.
+              </p>
             </div>
           )}
 

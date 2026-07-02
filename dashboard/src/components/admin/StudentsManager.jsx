@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Ban,
   Download,
@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { api } from '../../api/client'
+import { api, supabase } from '../../api/client'
 
 const KAINGA_OPTIONS = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
 const YEAR_LEVELS = ['9', '10', '11', '12', '13']
@@ -24,6 +24,7 @@ const EMPTY_FORM = {
   year_level: '',
   form_group: '',
   kainga: '',
+  la_teacher_id: '',
   rfid_card_uid: '',
   temporary_password: '',
   auto_generate_password: true,
@@ -65,6 +66,7 @@ function studentToForm(student) {
     year_level: student.year_level ? String(student.year_level) : '',
     form_group: student.form_group || '',
     kainga: student.kainga || '',
+    la_teacher_id: student.la_teacher_id || '',
     rfid_card_uid: student.rfid_card_uid || '',
     temporary_password: '',
     auto_generate_password: true,
@@ -99,12 +101,13 @@ function exportStudents(students) {
 }
 
 async function fetchStudentManagementData() {
-  const [studentData, auditData] = await Promise.all([
+  const [studentData, auditData, teacherResult] = await Promise.all([
     api.get('/api/students/manage'),
     api.get('/api/students/manage/audit-logs'),
+    supabase.from('profiles').select('id, full_name, email').eq('role', 'teacher').order('full_name'),
   ])
 
-  return { studentData, auditData }
+  return { studentData, auditData, teachers: teacherResult.data || [] }
 }
 
 function ActionNotice({ notice }) {
@@ -116,7 +119,7 @@ function ActionNotice({ notice }) {
   )
 }
 
-function StudentFormModal({ mode, form, setForm, onClose, onSubmit, saving }) {
+function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, saving }) {
   const isEdit = mode === 'edit'
 
   return (
@@ -165,6 +168,13 @@ function StudentFormModal({ mode, form, setForm, onClose, onSubmit, saving }) {
             <select id="student-kainga" className="session-select" value={form.kainga} onChange={(event) => setForm((current) => ({ ...current, kainga: event.target.value }))}>
               <option value="">Not set</option>
               {KAINGA_OPTIONS.map((kainga) => <option key={kainga} value={kainga}>{kainga}</option>)}
+            </select>
+          </div>
+          <div className="login-field">
+            <label htmlFor="student-la-teacher">LA teacher</label>
+            <select id="student-la-teacher" className="session-select" value={form.la_teacher_id} onChange={(event) => setForm((current) => ({ ...current, la_teacher_id: event.target.value }))}>
+              <option value="">Not set</option>
+              {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>)}
             </select>
           </div>
           {!isEdit && (
@@ -291,6 +301,7 @@ function ConfirmModal({ action, student, onClose, onConfirm, saving }) {
 export default function StudentsManager() {
   const [students, setStudents] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
+  const [teachers, setTeachers] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyId, setBusyId] = useState(null)
@@ -307,11 +318,16 @@ export default function StudentsManager() {
   const [rfidModal, setRfidModal] = useState(null)
   const [rfidForm, setRfidForm] = useState({ action: 'assign', rfid_card_uid: '' })
   const [confirmModal, setConfirmModal] = useState(null)
+  const [emailForm, setEmailForm] = useState({ recipientMode: 'visible', subject: '', message: '' })
+  const [emailNotice, setEmailNotice] = useState(null)
+  const [emailSending, setEmailSending] = useState(false)
+  const emailCardRef = useRef(null)
+  const emailSubjectRef = useRef(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setNotice(null)
-    const { studentData, auditData } = await fetchStudentManagementData()
+    const { studentData, auditData, teachers: teacherData } = await fetchStudentManagementData()
 
     if (studentData?.error) {
       setNotice({ type: 'error', text: studentData.error })
@@ -320,6 +336,7 @@ export default function StudentsManager() {
     }
 
     if (!auditData?.error) setAuditLogs(Array.isArray(auditData) ? auditData : [])
+    setTeachers(teacherData)
     setLoading(false)
   }, [])
 
@@ -327,7 +344,7 @@ export default function StudentsManager() {
     let cancelled = false
 
     async function loadInitialData() {
-      const { studentData, auditData } = await fetchStudentManagementData()
+      const { studentData, auditData, teachers: teacherData } = await fetchStudentManagementData()
 
       if (cancelled) return
 
@@ -338,6 +355,7 @@ export default function StudentsManager() {
       }
 
       if (!auditData?.error) setAuditLogs(Array.isArray(auditData) ? auditData : [])
+      setTeachers(teacherData)
       setLoading(false)
     }
 
@@ -376,6 +394,24 @@ export default function StudentsManager() {
     [students, selectedIds],
   )
 
+  const emailRecipientPool = useMemo(() => {
+    if (emailForm.recipientMode === 'selected') return selectedStudents
+    if (emailForm.recipientMode === 'all') return students
+    return visibleStudents
+  }, [emailForm.recipientMode, selectedStudents, students, visibleStudents])
+
+  const emailRecipients = useMemo(
+    () => emailRecipientPool.filter((student) => student.email),
+    [emailRecipientPool],
+  )
+
+  const emailRecipientPreview = useMemo(() => {
+    if (!emailRecipients.length) return 'No recipients with linked email addresses.'
+    const names = emailRecipients.slice(0, 4).map((student) => student.full_name).join(', ')
+    const extra = emailRecipients.length > 4 ? ` and ${emailRecipients.length - 4} more` : ''
+    return `${emailRecipients.length} recipient(s): ${names}${extra}`
+  }, [emailRecipients])
+
   const stats = useMemo(() => ({
     total: students.length,
     active: students.filter((student) => student.account_status === 'active').length,
@@ -397,6 +433,21 @@ export default function StudentsManager() {
     setForm(studentToForm(student))
     setFormModal({ mode: 'edit', student })
     setNotice(null)
+  }
+
+  const isInteractiveTarget = (target) => Boolean(
+    target.closest('button, a, input, select, textarea, label'),
+  )
+
+  const handleStudentRowClick = (event, student) => {
+    if (isInteractiveTarget(event.target)) return
+    openEditModal(student)
+  }
+
+  const handleStudentRowKeyDown = (event, student) => {
+    if (!['Enter', ' '].includes(event.key) || isInteractiveTarget(event.target)) return
+    event.preventDefault()
+    openEditModal(student)
   }
 
   const submitStudentForm = async (event) => {
@@ -566,6 +617,102 @@ export default function StudentsManager() {
     loadData()
   }
 
+  const openMailtoFallback = (recipients, subject, message, reason) => {
+    const recipientEmails = [...new Set(recipients.map((student) => student.email).filter(Boolean))]
+    const params = new URLSearchParams({ subject, body: message })
+    const mailtoUrl = `mailto:${recipientEmails.map(encodeURIComponent).join(',')}?${params.toString()}`
+
+    if (mailtoUrl.length > 1900) {
+      setEmailNotice({
+        type: 'error',
+        text: `${reason}. The message is too long for a mail app fallback; shorten it or configure an email provider.`,
+      })
+      return false
+    }
+
+    window.location.href = mailtoUrl
+    setEmailNotice({
+      type: 'success',
+      text: `${reason}. Opened your email app with ${recipientEmails.length} recipient(s).`,
+    })
+    return true
+  }
+
+  const prepareStudentEmail = (student) => {
+    if (!student.email) {
+      setNotice({ type: 'error', text: `${student.full_name} does not have a linked email address.` })
+      return
+    }
+
+    setSelectedIds([student.id])
+    setEmailForm((current) => ({ ...current, recipientMode: 'selected' }))
+    setEmailNotice({ type: 'success', text: `Composer ready for ${student.full_name}.` })
+
+    window.setTimeout(() => {
+      emailCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      emailSubjectRef.current?.focus()
+    }, 0)
+  }
+
+  const sendAdminEmail = async (event) => {
+    event.preventDefault()
+    const subject = emailForm.subject.trim()
+    const message = emailForm.message.trim()
+
+    setEmailNotice(null)
+
+    if (!subject) {
+      setEmailNotice({ type: 'error', text: 'Add an email subject before sending.' })
+      return
+    }
+
+    if (!message) {
+      setEmailNotice({ type: 'error', text: 'Add an email message before sending.' })
+      return
+    }
+
+    if (!emailRecipients.length) {
+      setEmailNotice({ type: 'error', text: 'Choose at least one recipient with a linked email address.' })
+      return
+    }
+
+    setEmailSending(true)
+    let data
+    try {
+      data = await api.post('/api/students/manage/email', {
+        recipient_ids: emailRecipients.map((student) => student.id),
+        subject,
+        message,
+      })
+    } catch (error) {
+      openMailtoFallback(emailRecipients, subject, message, error.message || 'Email server could not be reached')
+      setEmailSending(false)
+      return
+    }
+    setEmailSending(false)
+
+    if (data?.error) {
+      setEmailNotice({ type: 'error', text: data.error })
+      return
+    }
+
+    setEmailNotice({
+      type: data.emailSent ? 'success' : 'error',
+      text: data.emailSent
+        ? `Email sent to ${data.recipientCount} recipient(s).`
+        : `Email prepared for ${data.recipientCount || emailRecipients.length} recipient(s), but was not sent: ${data.emailError || 'Email provider is not configured.'}`,
+    })
+    if (data.emailSent === false) {
+      openMailtoFallback(
+        emailRecipients,
+        subject,
+        message,
+        data.emailError || 'Email provider is not configured',
+      )
+    }
+    loadData()
+  }
+
   if (loading) return <div className="loading">loading</div>
 
   return (
@@ -652,6 +799,92 @@ export default function StudentsManager() {
         </section>
       )}
 
+      <section className="student-email-card" ref={emailCardRef}>
+        <div className="student-table-head">
+          <div>
+            <p className="card-title">Admin Email</p>
+            <h3>Send a composed message to student recipients.</h3>
+          </div>
+          <span className="student-email-count">{emailRecipientPreview}</span>
+        </div>
+
+        <form className="student-email-grid" onSubmit={sendAdminEmail}>
+          <div className="student-email-form">
+            <label>
+              Recipient group
+              <select
+                className="session-select"
+                value={emailForm.recipientMode}
+                onChange={(event) => {
+                  setEmailForm((current) => ({ ...current, recipientMode: event.target.value }))
+                  setEmailNotice(null)
+                }}
+              >
+                <option value="visible">Current filtered view ({visibleStudents.filter((student) => student.email).length})</option>
+                <option value="selected">Selected students ({selectedStudents.filter((student) => student.email).length})</option>
+                <option value="all">All students with email ({students.filter((student) => student.email).length})</option>
+              </select>
+            </label>
+
+            <label>
+              Email subject
+              <input
+                ref={emailSubjectRef}
+                value={emailForm.subject}
+                onChange={(event) => {
+                  setEmailForm((current) => ({ ...current, subject: event.target.value }))
+                  setEmailNotice(null)
+                }}
+                placeholder="Attendance update"
+              />
+            </label>
+
+            <label>
+              Email message/body
+              <textarea
+                value={emailForm.message}
+                onChange={(event) => {
+                  setEmailForm((current) => ({ ...current, message: event.target.value }))
+                  setEmailNotice(null)
+                }}
+                rows={8}
+                placeholder="Write the message students will receive..."
+              />
+            </label>
+
+            <div className="student-email-actions">
+              <button type="submit" disabled={emailSending}>
+                <Mail size={16} strokeWidth={2.2} />
+                {emailSending ? 'Sending...' : 'Send email'}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setEmailForm((current) => ({ ...current, subject: '', message: '' }))
+                  setEmailNotice(null)
+                }}
+              >
+                Clear draft
+              </button>
+            </div>
+
+            {emailNotice && (
+              <p className={`action-notice student-email-notice ${emailNotice.type === 'error' ? 'is-error' : 'is-success'}`} role={emailNotice.type === 'error' ? 'alert' : 'status'}>
+                {emailNotice.text}
+              </p>
+            )}
+          </div>
+
+          <aside className="student-email-preview" aria-label="Email preview">
+            <span>Preview</span>
+            <strong>{emailForm.subject.trim() || 'No subject yet'}</strong>
+            <em>{emailRecipientPreview}</em>
+            <p>{emailForm.message.trim() || 'Your message preview will appear here before sending.'}</p>
+          </aside>
+        </form>
+      </section>
+
       <section className="student-table-card">
         <div className="student-table-head">
           <p className="card-title">Students ({visibleStudents.length}/{students.length})</p>
@@ -684,6 +917,7 @@ export default function StudentsManager() {
                   <th>Year / class</th>
                   <th>Kainga</th>
                   <th>RFID</th>
+                  <th>LA teacher</th>
                   <th>Account</th>
                   <th>Attendance</th>
                   <th>Actions</th>
@@ -691,7 +925,14 @@ export default function StudentsManager() {
               </thead>
               <tbody>
                 {visibleStudents.map((student) => (
-                  <tr key={student.id}>
+                  <tr
+                    key={student.id}
+                    className="student-clickable-row"
+                    tabIndex={0}
+                    onClick={(event) => handleStudentRowClick(event, student)}
+                    onKeyDown={(event) => handleStudentRowKeyDown(event, student)}
+                    aria-label={`Open ${student.full_name} student record`}
+                  >
                     <td>
                       <input
                         type="checkbox"
@@ -714,6 +955,7 @@ export default function StudentsManager() {
                       <span className={`status-badge ${getStatusTone(student.rfid_status)}`}>{student.rfid_status}</span>
                       <span className="student-table-sub">{maskCard(student.rfid_card_uid)}</span>
                     </td>
+                    <td className="student-id">{student.la_teacher_name || '-'}</td>
                     <td>
                       <span className={`status-badge ${getStatusTone(student.account_status)}`}>{student.account_status}</span>
                     </td>
@@ -727,9 +969,12 @@ export default function StudentsManager() {
                         <button type="button" className="btn-ghost" onClick={() => openRfidModal(student)}>
                           RFID
                         </button>
-                        <button type="button" className="btn-ghost" onClick={() => resendConfirmation(student)} disabled={busyId === student.id || !student.email}>
+                        <button type="button" className="btn-ghost" onClick={() => prepareStudentEmail(student)} disabled={busyId === student.id}>
                           <Mail size={14} strokeWidth={2.2} />
                           Email
+                        </button>
+                        <button type="button" className="btn-ghost" onClick={() => resendConfirmation(student)} disabled={busyId === student.id}>
+                          Invite
                         </button>
                         {student.account_status === 'active' ? (
                           <button type="button" className="btn-ghost" onClick={() => setConfirmModal({ action: 'disable', student })} disabled={busyId === student.id}>
@@ -781,6 +1026,7 @@ export default function StudentsManager() {
           mode={formModal.mode}
           form={form}
           setForm={setForm}
+          teachers={teachers}
           onClose={() => setFormModal(null)}
           onSubmit={submitStudentForm}
           saving={saving}

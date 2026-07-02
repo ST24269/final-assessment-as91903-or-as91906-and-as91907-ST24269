@@ -4,6 +4,8 @@ const supabase = require('../db/pool')
 const { isValidEmailAddress, sendEmail } = require('../utils/email')
 
 const SAFE_RESET_MESSAGE = 'If an account exists for this email, a password reset link has been sent.'
+const SAFE_RESET_ERROR = 'Password reset could not be sent right now. Ask an administrator to check email configuration.'
+const VALID_ROLES = ['student', 'teacher', 'admin']
 
 function getFrontendUrl() {
   return (
@@ -14,17 +16,9 @@ function getFrontendUrl() {
   ).replace(/\/+$/, '')
 }
 
-function isProduction() {
-  return process.env.NODE_ENV === 'production'
-}
-
 function sendResetResponse(res, status, error) {
-  if (isProduction()) {
-    return res.status(200).json({ success: true, message: SAFE_RESET_MESSAGE })
-  }
-
   if (error) {
-    return res.status(status).json({ error })
+    return res.status(status).json({ error: SAFE_RESET_ERROR })
   }
 
   return res.status(200).json({ success: true, message: SAFE_RESET_MESSAGE })
@@ -32,12 +26,13 @@ function sendResetResponse(res, status, error) {
 
 router.post('/forgot-password', async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase()
+  const role = VALID_ROLES.includes(req.body.role) ? req.body.role : 'student'
 
   if (!isValidEmailAddress(email)) {
     return res.status(400).json({ error: 'Enter a valid email address.' })
   }
 
-  const redirectTo = `${getFrontendUrl()}/reset-password`
+  const redirectTo = `${getFrontendUrl()}/reset-password?role=${role}`
 
   try {
     const { data, error: linkError } = await supabase.auth.admin.generateLink({
@@ -48,14 +43,14 @@ router.post('/forgot-password', async (req, res) => {
 
     if (linkError) {
       console.error('[auth] Password reset link generation failed:', linkError.message)
-      return sendResetResponse(res, 500, `Could not generate reset link: ${linkError.message}`)
+      return sendResetResponse(res, 500, linkError.message)
     }
 
     const resetLink = data?.properties?.action_link
 
     if (!resetLink) {
       console.error('[auth] Password reset link generation returned no action_link.')
-      return sendResetResponse(res, 500, 'Could not generate reset link.')
+      return sendResetResponse(res, 500, 'No action_link returned.')
     }
 
     const emailResult = await sendEmail({
@@ -74,7 +69,7 @@ router.post('/forgot-password', async (req, res) => {
     console.info(`[auth] Forgot password email result: ${emailResult.sent ? 'sent' : `not sent - ${emailResult.error}`}`)
 
     if (!emailResult.sent) {
-      return sendResetResponse(res, 502, `Password reset email was not sent: ${emailResult.error}`)
+      return sendResetResponse(res, 502, emailResult.error)
     }
 
     return res.json({

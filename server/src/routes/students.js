@@ -7,7 +7,8 @@ const { isValidEmailAddress, sendEmail } = require('../utils/email')
 router.use(authenticateUser)
 
 const BASE_STUDENT_COLUMNS = 'id, full_name, student_number, year_level, rfid_card_uid, created_at'
-const EXTENDED_STUDENT_COLUMNS = `${BASE_STUDENT_COLUMNS}, first_name, last_name, kainga, form_group, account_status, rfid_status, disabled_at`
+const EXTENDED_STUDENT_COLUMNS = `${BASE_STUDENT_COLUMNS}, first_name, last_name, kainga, form_group, la_teacher_id, account_status, rfid_status, disabled_at`
+const CLASS_LINK_COLUMNS = 'id, name, subject, room, teacher_id, profiles(full_name, email)'
 const VALID_KAINGA = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
 const VALID_ACCOUNT_STATUSES = ['active', 'inactive', 'disabled']
 const CARD_ID_PATTERN = /^[A-Z0-9_-]{3,64}$/
@@ -38,6 +39,17 @@ function buildFullName({ first_name, last_name, full_name }) {
   return [first_name, last_name].map((part) => String(part || '').trim()).filter(Boolean).join(' ')
 }
 
+function formatClassLabel(classRecord) {
+  if (!classRecord) return 'Class'
+  return `${classRecord.name || 'Class'} - ${classRecord.subject || 'Subject'}`
+}
+
+function routeError(message, status = 500) {
+  const error = new Error(message)
+  error.status = status
+  return error
+}
+
 function normalizeKainga(value) {
   if (!value) return null
   return VALID_KAINGA.find((item) => item.toLowerCase() === String(value).trim().toLowerCase()) || null
@@ -52,6 +64,15 @@ function validateCardUid(uid) {
   return normalizedUid
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function generateTemporaryPassword() {
   return `Attend-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 6)}`
 }
@@ -61,7 +82,7 @@ async function supportsExtendedStudentColumns() {
 
   const { error } = await supabase
     .from('students')
-    .select('first_name, last_name, kainga, form_group, account_status, rfid_status, disabled_at')
+    .select('first_name, last_name, kainga, form_group, la_teacher_id, account_status, rfid_status, disabled_at')
     .limit(1)
 
   extendedStudentColumnsSupported = !error
@@ -81,6 +102,96 @@ async function selectStudents() {
 
   if (error) throw new Error(error.message)
   return data || []
+}
+
+async function selectClassesForLinking() {
+  const { data, error } = await supabase
+    .from('classes')
+    .select(CLASS_LINK_COLUMNS)
+    .order('name')
+
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
+async function selectTeachersForLinking() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .eq('role', 'teacher')
+    .order('full_name')
+
+  if (error) throw new Error(error.message)
+  return data || []
+}
+
+async function getLinkingData(query = {}) {
+  const [students, classes, teachers] = await Promise.all([
+    selectStudents().then((studentRows) => enrichStudentsForLinking(studentRows)),
+    selectClassesForLinking(),
+    selectTeachersForLinking(),
+  ])
+
+  return {
+    students: applyStudentFilters(students, query),
+    classes,
+    teachers,
+  }
+}
+
+async function enrichStudentsForLinking(students) {
+  if (!students.length) return []
+
+  const studentIds = students.map((student) => student.id)
+  const [linksResult, enrolmentsResult] = await Promise.all([
+    supabase
+      .from('student_profiles')
+      .select('student_id, profile_id')
+      .in('student_id', studentIds),
+    supabase
+      .from('enrolments')
+      .select(`student_id, classes(${CLASS_LINK_COLUMNS})`)
+      .in('student_id', studentIds),
+  ])
+
+  if (linksResult.error) throw new Error(linksResult.error.message)
+  if (enrolmentsResult.error) throw new Error(enrolmentsResult.error.message)
+
+  const links = linksResult.data || []
+  const profileIds = [...new Set(links.map((link) => link.profile_id).filter(Boolean))]
+  let profilesById = new Map()
+
+  if (profileIds.length) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, created_at')
+      .in('id', profileIds)
+
+    if (profilesError) throw new Error(profilesError.message)
+    profilesById = new Map((profiles || []).map((profile) => [profile.id, profile]))
+  }
+
+  const linkByStudent = new Map(links.map((link) => [link.student_id, link]))
+  const classesByStudent = new Map()
+
+  for (const row of enrolmentsResult.data || []) {
+    if (!classesByStudent.has(row.student_id)) classesByStudent.set(row.student_id, [])
+    if (row.classes) classesByStudent.get(row.student_id).push(row.classes)
+  }
+
+  return students.map((student) => {
+    const link = linkByStudent.get(student.id)
+    const profile = link?.profile_id ? profilesById.get(link.profile_id) : null
+    const classes = classesByStudent.get(student.id) || []
+
+    return {
+      ...student,
+      email: profile?.email || '',
+      profile_id: link?.profile_id || null,
+      classes,
+      class_label: student.form_group || classes.map((classItem) => classItem.name).join(', '),
+    }
+  })
 }
 
 async function logAudit(req, action, targetStudentId, description, metadata = {}) {
@@ -158,7 +269,7 @@ async function enrichStudents(students) {
       .in('student_id', studentIds),
     supabase
       .from('enrolments')
-      .select('student_id, classes(id, name, subject, room)')
+      .select('student_id, classes(id, name, subject, room, teacher_id, profiles(full_name, email))')
       .in('student_id', studentIds),
     supabase
       .from('attendance')
@@ -174,6 +285,7 @@ async function enrichStudents(students) {
   const links = linksResult.data || []
   const profileIds = [...new Set(links.map((link) => link.profile_id).filter(Boolean))]
   let profilesById = new Map()
+  let laTeachersById = new Map()
 
   if (profileIds.length) {
     const { data: profiles, error: profilesError } = await supabase
@@ -186,6 +298,18 @@ async function enrichStudents(students) {
   }
 
   const linkByStudent = new Map(links.map((link) => [link.student_id, link]))
+  const laTeacherIds = [...new Set(students.map((student) => student.la_teacher_id).filter(Boolean))]
+
+  if (laTeacherIds.length) {
+    const { data: laTeachers, error: laTeacherError } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', laTeacherIds)
+
+    if (laTeacherError) throw new Error(laTeacherError.message)
+    laTeachersById = new Map((laTeachers || []).map((teacher) => [teacher.id, teacher]))
+  }
+
   const classesByStudent = new Map()
   const attendanceByStudent = new Map()
 
@@ -212,6 +336,8 @@ async function enrichStudents(students) {
       last_name: student.last_name || parsedName.lastName,
       email: profile?.email || '',
       profile_id: link?.profile_id || null,
+      la_teacher_name: student.la_teacher_id ? laTeachersById.get(student.la_teacher_id)?.full_name || '' : '',
+      la_teacher_email: student.la_teacher_id ? laTeachersById.get(student.la_teacher_id)?.email || '' : '',
       classes,
       class_label: student.form_group || classes.map((classItem) => classItem.name).join(', '),
       account_status: student.account_status || (profile ? 'active' : 'record only'),
@@ -293,12 +419,61 @@ async function buildStudentPayload(body, { includeRfid = true, defaultStatus = '
     payload.last_name = String(body.last_name || splitName(fullName).lastName).trim()
     payload.kainga = normalizedKainga
     payload.form_group = String(body.form_group || '').trim() || null
+    payload.la_teacher_id = body.la_teacher_id || null
     payload.account_status = VALID_ACCOUNT_STATUSES.includes(body.account_status) ? body.account_status : defaultStatus
     if (includeRfid) payload.rfid_status = payload.rfid_card_uid ? 'active' : 'unassigned'
   }
 
   return { payload, extended }
 }
+
+async function ensureTeacherProfile(teacherId) {
+  if (!teacherId) return null
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', teacherId)
+    .eq('role', 'teacher')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!data) throw routeError('Selected teacher could not be found.', 400)
+  return data
+}
+
+async function getStudentAndClass(studentId, classId) {
+  const [studentResult, classResult] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, full_name')
+      .eq('id', studentId)
+      .maybeSingle(),
+    supabase
+      .from('classes')
+      .select(CLASS_LINK_COLUMNS)
+      .eq('id', classId)
+      .maybeSingle(),
+  ])
+
+  if (studentResult.error) throw new Error(studentResult.error.message)
+  if (classResult.error) throw new Error(classResult.error.message)
+  if (!studentResult.data) throw routeError('Student not found.', 404)
+  if (!classResult.data) throw routeError('Class not found.', 404)
+
+  return {
+    student: studentResult.data,
+    classRecord: classResult.data,
+  }
+}
+
+router.get('/manage/linking-data', requireRole('admin'), async (req, res) => {
+  try {
+    res.json(await getLinkingData(req.query))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
 
 // Rich admin-only student management list.
 router.get('/manage', requireRole('admin'), async (req, res) => {
@@ -323,6 +498,157 @@ router.get('/manage/audit-logs', requireRole('admin'), async (req, res) => {
   }
 
   res.json(data || [])
+})
+
+router.post('/manage/email', requireRole('admin'), async (req, res) => {
+  const subject = String(req.body.subject || '').trim()
+  const message = String(req.body.message || '').trim()
+  const recipientIds = Array.isArray(req.body.recipient_ids)
+    ? [...new Set(req.body.recipient_ids.map((id) => String(id || '').trim()).filter(Boolean))]
+    : []
+
+  if (!subject) return res.status(400).json({ error: 'Email subject is required.' })
+  if (!message) return res.status(400).json({ error: 'Email message is required.' })
+  if (!recipientIds.length) return res.status(400).json({ error: 'Choose at least one student with an email address.' })
+
+  try {
+    const students = await enrichStudents(await selectStudents())
+    const selectedStudents = students.filter((student) => recipientIds.includes(String(student.id)) && student.email)
+    const validRecipients = selectedStudents.filter((student) => isValidEmailAddress(student.email))
+    const invalidCount = selectedStudents.length - validRecipients.length
+    const recipients = [...new Set(validRecipients.map((student) => String(student.email).trim().toLowerCase()))]
+
+    if (!recipients.length) {
+      return res.status(400).json({ error: 'No selected students have a valid linked email address.' })
+    }
+
+    const emailResult = await sendEmail({
+      to: recipients,
+      subject,
+      text: message,
+      html: `<p>${escapeHtml(message).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>')}</p>`,
+    })
+
+    await logAudit(req, 'admin_email_sent', null, `Sent admin email to ${recipients.length} student recipient(s)`, {
+      subject,
+      recipientCount: recipients.length,
+      invalidCount,
+      emailSent: emailResult.sent,
+      emailError: emailResult.error,
+    })
+
+    res.status(emailResult.sent ? 200 : 202).json({
+      success: true,
+      emailSent: emailResult.sent,
+      emailError: emailResult.sent ? null : emailResult.error,
+      recipientCount: recipients.length,
+      invalidCount,
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+router.post('/manage/:studentId/classes/:classId', requireRole('admin'), async (req, res) => {
+  const studentId = req.params.studentId
+  const classId = req.params.classId
+  const teacherId = String(req.body.teacher_id || '').trim() || null
+
+  try {
+    const { student, classRecord } = await getStudentAndClass(studentId, classId)
+
+    if (teacherId) {
+      await ensureTeacherProfile(teacherId)
+
+      const { error: teacherUpdateError } = await supabase
+        .from('classes')
+        .update({ teacher_id: teacherId })
+        .eq('id', classId)
+
+      if (teacherUpdateError) throw new Error(teacherUpdateError.message)
+    }
+
+    const { error: linkError } = await supabase
+      .from('enrolments')
+      .insert([{ student_id: studentId, class_id: classId }])
+
+    const alreadyLinked = linkError?.code === '23505'
+    if (linkError && !alreadyLinked) throw new Error(linkError.message)
+
+    await logAudit(
+      req,
+      alreadyLinked ? 'student_class_link_checked' : 'student_class_linked',
+      studentId,
+      `${student.full_name} linked to ${formatClassLabel(classRecord)}`,
+      { classId, teacherId, alreadyLinked },
+    )
+
+    res.status(alreadyLinked ? 200 : 201).json({
+      success: true,
+      linked: true,
+      alreadyLinked,
+    })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
+})
+
+router.delete('/manage/:studentId/classes/:classId', requireRole('admin'), async (req, res) => {
+  const studentId = req.params.studentId
+  const classId = req.params.classId
+
+  try {
+    const { student, classRecord } = await getStudentAndClass(studentId, classId)
+    const { error } = await supabase
+      .from('enrolments')
+      .delete()
+      .eq('student_id', studentId)
+      .eq('class_id', classId)
+
+    if (error) throw new Error(error.message)
+
+    await logAudit(
+      req,
+      'student_class_unlinked',
+      studentId,
+      `${formatClassLabel(classRecord)} removed from ${student.full_name}`,
+      { classId },
+    )
+
+    res.json({ success: true, deleted: true })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
+})
+
+router.patch('/manage/classes/:classId/teacher', requireRole('admin'), async (req, res) => {
+  const classId = req.params.classId
+  const teacherId = String(req.body.teacher_id || '').trim() || null
+
+  try {
+    if (teacherId) await ensureTeacherProfile(teacherId)
+
+    const { data, error } = await supabase
+      .from('classes')
+      .update({ teacher_id: teacherId })
+      .eq('id', classId)
+      .select(CLASS_LINK_COLUMNS)
+      .single()
+
+    if (error) throw new Error(error.message)
+
+    await logAudit(
+      req,
+      'class_teacher_updated',
+      null,
+      `Updated teacher for ${formatClassLabel(data)}`,
+      { classId, teacherId },
+    )
+
+    res.json({ success: true, class: data })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
+  }
 })
 
 router.post('/manage', requireRole('admin'), async (req, res) => {
