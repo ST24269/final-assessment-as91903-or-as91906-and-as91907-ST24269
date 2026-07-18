@@ -135,7 +135,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
               value={selectedClass}
               onChange={(event) => setSelectedClass(event.target.value)}
               disabled={loadingClasses}
-              className="min-h-11 rounded-[10px] border border-white/[0.06] bg-[#1c2330] px-4 py-2.5 text-sm font-mono text-white outline-none transition-all duration-200 focus:border-[#1A9B8C50] disabled:opacity-50"
+              className="session-select"
             >
               <option value="">{loadingClasses ? 'Loading classes...' : 'Select a class...'}</option>
               {classes.map((classItem) => (
@@ -149,13 +149,12 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Session note (optional)"
-              className="min-h-11 rounded-[10px] border border-white/[0.06] bg-[#1c2330] px-4 py-2.5 text-sm text-white outline-none transition-all duration-200 placeholder:text-[#4A5568] focus:border-[#1A9B8C50]"
             />
 
             <button
               onClick={startSession}
               disabled={loading || loadingClasses}
-              className="min-h-11 rounded-[10px] bg-[#1A9B8C] px-5 py-2.5 text-sm font-bold text-[#050505] transition-all duration-300 hover:bg-[#22B5A4] hover:shadow-[0_4px_16px_rgba(26,155,140,0.3)] active:scale-[0.98] disabled:opacity-40"
+              className="session-start-button"
             >
               <Play size={15} strokeWidth={2.2} />
               {loading ? 'Starting...' : 'Start session'}
@@ -163,7 +162,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
           </div>
 
           {selectedClassDetails && (
-            <p className="text-[0.78rem] font-mono text-[#8B9BB0]">
+            <p className="session-helper-text">
               Room: {selectedClassDetails.room || 'not set'} - Subject: {selectedClassDetails.subject}
             </p>
           )}
@@ -204,13 +203,13 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="session-live-row">
           <div>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+            <div className="session-live-title">
+              <span className="session-live-dot" />
               Session live
             </div>
-            <p className="mt-1 text-[0.78rem] font-mono text-[#8B9BB0]">
+            <p className="session-helper-text">
               {activeSession.classes?.name || 'Class'} - started {formatSessionTime(activeSession.started_at)}
               {activeSession.classes?.room ? ` - ${activeSession.classes.room}` : ''}
               {activeSession.profiles?.full_name ? ` - opened by ${activeSession.profiles.full_name}` : ''}
@@ -220,7 +219,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
           <button
             onClick={endSession}
             disabled={loading}
-            className="rounded-lg border border-red-500/30 px-4 py-2 text-sm font-mono text-red-400 transition-all duration-200 hover:border-red-400 hover:bg-red-500/10 disabled:opacity-40"
+            className="session-end-button"
           >
             <Square size={14} strokeWidth={2.2} />
             {loading ? 'Ending...' : 'End session'}
@@ -229,7 +228,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
       )}
 
       {error && (
-        <p className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[0.78rem] font-mono text-red-400">
+        <p className="portal-error-message">
           {error}
         </p>
       )}

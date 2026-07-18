@@ -41,6 +41,16 @@ function getInitials(name, email) {
     .join('') || 'U'
 }
 
+function getStoredAvatar(profileId) {
+  if (!profileId) return ''
+
+  try {
+    return window.localStorage.getItem(`tago-avatar-${profileId}`) || ''
+  } catch {
+    return ''
+  }
+}
+
 export default function ProfileMenu({
   name,
   email,
@@ -55,7 +65,7 @@ export default function ProfileMenu({
   const roleLabel = ROLE_LABELS[role] || 'Account'
   const displayName = name || email?.split('@')[0] || roleLabel
   const initials = useMemo(() => getInitials(displayName, email), [displayName, email])
-  const avatarUrl = profileId ? window.localStorage.getItem(`attendrfid-avatar-${profileId}`) || '' : ''
+  const avatarUrl = getStoredAvatar(profileId)
   const menuItems = [
     ...getAccountSections(role).map((section) => {
       const config = ACCOUNT_SECTIONS[section]
@@ -83,9 +93,9 @@ export default function ProfileMenu({
       }
     }
 
-    window.addEventListener('attendrfid-avatar-updated', syncAvatar)
+    window.addEventListener('tago-avatar-updated', syncAvatar)
 
-    return () => window.removeEventListener('attendrfid-avatar-updated', syncAvatar)
+    return () => window.removeEventListener('tago-avatar-updated', syncAvatar)
   }, [profileId])
 
   useEffect(() => {

@@ -48,57 +48,55 @@ export default function AttendanceTable({ attendance, setAttendance, loading = f
   return (
     <Card title={title}>
       {loading && (
-        <p className="text-[0.78rem] font-mono text-[#8B9BB0]">Loading attendance...</p>
+        <p className="table-helper-text">Loading attendance...</p>
       )}
 
       {(error || updateError) && (
-        <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[0.78rem] font-mono text-red-400">
+        <p className="portal-error-message">
           {error || updateError}
         </p>
       )}
 
       {!loading && sortedAttendance.length === 0 ? (
-        <p className="text-[0.78rem] font-mono text-[#4A5568]">No RFID scans have arrived for this session yet.</p>
+        <p className="table-helper-text">No RFID scans have arrived for this session yet.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <div className="student-table-wrap">
+          <table className="attendance-table teacher-register-table">
             <thead>
-              <tr className="border-b border-white/[0.06]">
+              <tr>
                 {['Student', 'ID', 'Scanned', 'Status', 'Action', 'Note'].map((heading) => (
-                  <th key={heading} className="px-2 pb-3 text-left text-[0.65rem] font-mono uppercase tracking-[0.12em] text-[#4A5568]">
-                    {heading}
-                  </th>
+                  <th key={heading}>{heading}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {sortedAttendance.map((record) => (
-                <tr key={record.id} className={`border-b border-white/[0.03] transition-colors hover:bg-white/[0.015] ${record.flagged ? 'bg-red-500/[0.03]' : ''}`}>
-                  <td className="px-2 py-3">
-                    <span className="text-sm font-medium text-white">{record.students?.full_name || 'Unknown student'}</span>
+                <tr key={record.id} className={record.flagged ? 'flagged-row' : ''}>
+                  <td>
+                    <strong>{record.students?.full_name || 'Unknown student'}</strong>
                   </td>
-                  <td className="px-2 py-3 text-[0.78rem] font-mono text-[#8B9BB0]">
+                  <td className="student-id">
                     {record.students?.student_number || 'Not set'}
                   </td>
-                  <td className="px-2 py-3 text-[0.78rem] font-mono text-[#8B9BB0]">
+                  <td className="student-id">
                     {formatTime(record.scanned_at)}
                   </td>
-                  <td className="px-2 py-3">
+                  <td>
                     <StatusBadge status={record.status} />
                   </td>
-                  <td className="px-2 py-3">
+                  <td>
                     <select
                       value={record.status}
                       disabled={updating === record.id}
                       onChange={(event) => changeStatus(record.id, event.target.value)}
-                      className="rounded-md border border-white/[0.06] bg-[#1c2330] px-2 py-1 text-[0.75rem] font-mono text-white outline-none disabled:opacity-50"
+                      className="override-select"
                     >
                       {STATUS_OPTIONS.map((status) => (
                         <option key={status} value={status}>{status}</option>
                       ))}
                     </select>
                   </td>
-                  <td className="px-2 py-3 text-[0.72rem] font-mono text-[#8B9BB0]">
+                  <td className="student-id">
                     {record.flagged ? `Flagged: ${record.flag_reason || 'review needed'}` : record.manual_override ? 'Manual override' : 'RFID scan'}
                   </td>
                 </tr>

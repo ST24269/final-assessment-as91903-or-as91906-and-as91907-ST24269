@@ -69,7 +69,7 @@ router.post('/card-request', async (req, res) => {
     }
   }
 
-  const subject = `[AttendRFID] ${requestLabel} - ${req.profile.full_name}`
+  const subject = `[Tago] ${requestLabel} - ${req.profile.full_name}`
   const text = [
     requestLabel,
     '',
@@ -84,11 +84,18 @@ router.post('/card-request', async (req, res) => {
 
   const emailResult = await sendEmail({ subject, text })
 
-  res.status(emailResult.sent ? 200 : 202).json({
-    success: true,
+  // Return proper status: 200 if email sent, 500 if failed (server error)
+  // The main operation (deactivation) succeeded, but notification failed
+  if (!emailResult.sent) {
+    console.error('[users] Card request email failed:', emailResult.error)
+  }
+
+  res.status(emailResult.sent ? 200 : 500).json({
+    success: emailResult.sent,  // Indicate if email was actually sent
     emailSent: emailResult.sent,
     emailError: emailResult.sent ? null : emailResult.error,
     deactivated,
+    message: emailResult.sent ? 'Card request submitted and notification sent.' : 'Card request submitted, but notification failed.',
   })
 })
 
@@ -185,11 +192,11 @@ router.post('/create', requireRole('admin'), async (req, res) => {
 
   const emailResult = await sendEmail({
     to: trimmedEmail,
-    subject: 'Your AttendRFID account has been created',
+    subject: 'Your Tago account has been created',
     text: [
       `Kia ora ${trimmedName},`,
       '',
-      'An AttendRFID account has been created for you.',
+      'A Tago account has been created for you.',
       `Role: ${role}`,
       `Email: ${trimmedEmail}`,
       '',

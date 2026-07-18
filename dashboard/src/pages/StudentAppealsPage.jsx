@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Send } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Clock3, Send } from 'lucide-react'
 import { api, supabase } from '../api/client'
 import Layout from '../components/Layout'
 import Card from '../components/Card'
 import Loader from '../components/Loader'
 
-const STATUS_LABELS = ['present', 'late', 'absent', 'excused']
+const REQUESTED_STATUS_OPTIONS = [
+  { value: 'present', label: 'Present - I was there' },
+  { value: 'late', label: 'Late - I arrived after class started' },
+  { value: 'excused', label: 'Excused - I had an approved reason' },
+]
 const APPEAL_REASONS = [
   'I was present but marked absent',
   'I was on time but marked late',
@@ -15,12 +19,59 @@ const APPEAL_REASONS = [
   'Other',
 ]
 
+function defaultAppealForm() {
+  return {
+    appeal_date: new Date().toISOString().slice(0, 10),
+    class_id: '',
+    attendance_id: '',
+    requested_status: '',
+    reason: '',
+    comments: '',
+  }
+}
+
+function readAppealDraft(userId) {
+  const fallback = defaultAppealForm()
+  if (!userId) return fallback
+
+  try {
+    const stored = window.localStorage.getItem(`tago-appeal-draft-${userId}`)
+    return stored ? { ...fallback, ...JSON.parse(stored) } : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeAppealDraft(userId, draft) {
+  if (!userId) return
+
+  try {
+    window.localStorage.setItem(`tago-appeal-draft-${userId}`, JSON.stringify(draft))
+  } catch {
+    // Draft saving is a convenience only.
+  }
+}
+
+function clearAppealDraft(userId) {
+  if (!userId) return
+
+  try {
+    window.localStorage.removeItem(`tago-appeal-draft-${userId}`)
+  } catch {
+    // Draft saving is a convenience only.
+  }
+}
+
 function formatDate(value) {
   return value ? new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date'
 }
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
+}
+
+function formatStatus(status) {
+  return status ? status.replace(/_/g, ' ') : 'Not recorded'
 }
 
 function statusTone(status) {
@@ -35,14 +86,7 @@ export default function StudentAppealsPage({ session, profile }) {
   const [attendance, setAttendance] = useState([])
   const [classes, setClasses] = useState([])
   const [appeals, setAppeals] = useState([])
-  const [appealForm, setAppealForm] = useState({
-    appeal_date: new Date().toISOString().slice(0, 10),
-    class_id: '',
-    attendance_id: '',
-    requested_status: '',
-    reason: '',
-    comments: '',
-  })
+  const [appealForm, setAppealForm] = useState(() => readAppealDraft(session.user.id))
   const [notice, setNotice] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -113,13 +157,30 @@ export default function StudentAppealsPage({ session, profile }) {
     return () => { cancelled = true }
   }, [session.user.id])
 
-  const attendanceOptions = useMemo(() => attendance.map((record) => ({
-    id: record.id,
-    label: `${formatDate(record.scanned_at)} - ${record.sessions?.classes?.name || 'Unknown class'} - ${record.status}`,
-    classId: record.sessions?.classes?.id || '',
-    date: record.scanned_at ? new Date(record.scanned_at).toISOString().slice(0, 10) : '',
-    status: record.status,
-  })), [attendance])
+  useEffect(() => {
+    writeAppealDraft(session.user.id, appealForm)
+  }, [appealForm, session.user.id])
+
+  const attendanceOptions = useMemo(() => attendance.map((record) => {
+    const dateSource = record.scanned_at || record.sessions?.started_at
+    const classRecord = record.sessions?.classes || null
+
+    return {
+      id: record.id,
+      label: `${formatDate(dateSource)} - ${classRecord?.name || 'Unknown class'} - ${formatStatus(record.status)}`,
+      classId: classRecord?.id || '',
+      className: classRecord?.name || 'Unknown class',
+      subject: classRecord?.subject || '',
+      room: classRecord?.room || '',
+      date: dateSource ? new Date(dateSource).toISOString().slice(0, 10) : '',
+      time: dateSource || '',
+      status: record.status,
+    }
+  }), [attendance])
+  const selectedAttendance = useMemo(
+    () => attendanceOptions.find((record) => record.id === appealForm.attendance_id) || null,
+    [appealForm.attendance_id, attendanceOptions],
+  )
 
   const submitAppeal = async (event) => {
     event.preventDefault()
@@ -145,14 +206,8 @@ export default function StudentAppealsPage({ session, profile }) {
     }
 
     setAppeals((current) => [data.appeal, ...current])
-    setAppealForm({
-      appeal_date: new Date().toISOString().slice(0, 10),
-      class_id: '',
-      attendance_id: '',
-      requested_status: '',
-      reason: '',
-      comments: '',
-    })
+    clearAppealDraft(session.user.id)
+    setAppealForm(defaultAppealForm())
     setNotice({
       type: data.emailSent ? 'success' : 'error',
       text: data.emailSent
@@ -219,7 +274,33 @@ export default function StudentAppealsPage({ session, profile }) {
                       <option key={record.id} value={record.id}>{record.label}</option>
                     ))}
                   </select>
+                  {attendanceOptions.length === 0 && (
+                    <span className="field-help">No attendance records are available yet. Use the date and class fields below.</span>
+                  )}
                 </div>
+
+                {selectedAttendance && (
+                  <div className="appeal-record-preview">
+                    <div>
+                      <span>Selected record</span>
+                      <strong>{selectedAttendance.className}</strong>
+                      <p>{selectedAttendance.subject || 'Subject not recorded'}{selectedAttendance.room ? ` - ${selectedAttendance.room}` : ''}</p>
+                    </div>
+                    <div>
+                      <span>
+                        <CalendarDays size={14} strokeWidth={2.2} />
+                        {formatDate(selectedAttendance.time)}
+                      </span>
+                      <span>
+                        <Clock3 size={14} strokeWidth={2.2} />
+                        {formatTime(selectedAttendance.time)}
+                      </span>
+                      <span className={`status-badge status-${selectedAttendance.status || 'excused'}`}>
+                        Current: {formatStatus(selectedAttendance.status)}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="login-field">
                   <label htmlFor="appeal-date">Date</label>
@@ -249,15 +330,17 @@ export default function StudentAppealsPage({ session, profile }) {
                 </div>
 
                 <div className="login-field">
-                  <label htmlFor="appeal-status">Requested status</label>
+                  <label htmlFor="appeal-status">Suggested correction (optional)</label>
                   <select
                     id="appeal-status"
                     className="session-select"
                     value={appealForm.requested_status}
                     onChange={(event) => setAppealForm((current) => ({ ...current, requested_status: event.target.value }))}
                   >
-                    <option value="">Not sure</option>
-                    {STATUS_LABELS.map((status) => <option key={status} value={status}>{status}</option>)}
+                    <option value="">Let the teacher decide</option>
+                    {REQUESTED_STATUS_OPTIONS.map((status) => (
+                      <option key={status.value} value={status.value}>{status.label}</option>
+                    ))}
                   </select>
                 </div>
 

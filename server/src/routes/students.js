@@ -537,8 +537,13 @@ router.post('/manage/email', requireRole('admin'), async (req, res) => {
       emailError: emailResult.error,
     })
 
-    res.status(emailResult.sent ? 200 : 202).json({
-      success: true,
+    // Return proper status: 200 if email sent, 500 if failed
+    if (!emailResult.sent) {
+      console.error('[students] Admin email failed:', emailResult.error)
+    }
+
+    res.status(emailResult.sent ? 200 : 500).json({
+      success: emailResult.sent,
       emailSent: emailResult.sent,
       emailError: emailResult.sent ? null : emailResult.error,
       recipientCount: recipients.length,
@@ -728,11 +733,11 @@ router.post('/manage', requireRole('admin'), async (req, res) => {
 
       emailResult = await sendEmail({
         to: email,
-        subject: 'Your AttendRFID student account has been created',
+        subject: 'Your Tago student account has been created',
         text: [
           `Kia ora ${built.payload.full_name},`,
           '',
-          'Your AttendRFID student account has been created.',
+          'Your Tago student account has been created.',
           `Email: ${email}`,
           `Temporary password: ${temporaryPassword}`,
           '',
@@ -892,11 +897,11 @@ router.post('/manage/:id/resend-confirmation', requireRole('admin'), async (req,
 
   const emailResult = await sendEmail({
     to: current.email,
-    subject: 'Your AttendRFID account details',
+    subject: 'Your Tago account details',
     text: [
       `Kia ora ${current.full_name},`,
       '',
-      'Your AttendRFID student account is active.',
+      'Your Tago student account is active.',
       `Email: ${current.email}`,
       '',
       'If you do not know your password, use the forgot password link on the sign-in page.',
@@ -908,8 +913,13 @@ router.post('/manage/:id/resend-confirmation', requireRole('admin'), async (req,
     emailError: emailResult.error,
   })
 
-  res.status(emailResult.sent ? 200 : 202).json({
-    success: true,
+  // Return proper status: 200 if email sent, 500 if failed
+  if (!emailResult.sent) {
+    console.error('[students] Confirmation email failed:', emailResult.error)
+  }
+
+  res.status(emailResult.sent ? 200 : 500).json({
+    success: emailResult.sent,
     emailSent: emailResult.sent,
     emailError: emailResult.sent ? null : emailResult.error,
   })

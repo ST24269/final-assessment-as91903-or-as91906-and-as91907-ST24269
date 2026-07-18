@@ -11,16 +11,19 @@ function teacherLabel(classItem) {
   return classItem?.profiles?.full_name || 'Teacher not assigned'
 }
 
+function searchText(parts) {
+  return parts.filter(Boolean).join(' ').toLowerCase()
+}
+
 export default function StudentClassLinksManager() {
   const [students, setStudents] = useState([])
   const [classes, setClasses] = useState([])
   const [teachers, setTeachers] = useState([])
   const [query, setQuery] = useState('')
+  const [classQuery, setClassQuery] = useState('')
   const [selectedStudentId, setSelectedStudentId] = useState('')
-  const [selectedClassId, setSelectedClassId] = useState('')
-  const [selectedTeacherId, setSelectedTeacherId] = useState('')
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [savingId, setSavingId] = useState(null)
   const [notice, setNotice] = useState(null)
 
   const applyLinkingData = useCallback((payload) => {
@@ -35,16 +38,6 @@ export default function StudentClassLinksManager() {
       current && nextStudents.some((student) => student.id === current)
         ? current
         : nextStudents[0]?.id || ''
-    ))
-    setSelectedClassId((current) => (
-      current && nextClasses.some((classItem) => classItem.id === current)
-        ? current
-        : nextClasses[0]?.id || ''
-    ))
-    setSelectedTeacherId((current) => (
-      current && nextTeachers.some((teacher) => teacher.id === current)
-        ? current
-        : ''
     ))
   }, [])
 
@@ -99,36 +92,49 @@ export default function StudentClassLinksManager() {
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
     if (!search) return students
-    return students.filter((student) => [
+    return students.filter((student) => searchText([
       student.full_name,
       student.student_number,
       student.email,
       student.kainga,
       student.class_label,
-    ].filter(Boolean).join(' ').toLowerCase().includes(search))
+    ]).includes(search))
   }, [query, students])
 
   const selectedStudent = students.find((student) => student.id === selectedStudentId) || null
-  const selectedClass = classes.find((classItem) => classItem.id === selectedClassId) || null
-  const currentLinks = selectedStudent?.classes || []
+  const currentLinks = useMemo(() => selectedStudent?.classes || [], [selectedStudent])
+  const linkedClassIds = useMemo(
+    () => new Set(currentLinks.map((classItem) => classItem.id)),
+    [currentLinks],
+  )
+
+  const filteredClasses = useMemo(() => {
+    const search = classQuery.trim().toLowerCase()
+    if (!search) return classes
+    return classes.filter((classItem) => searchText([
+      classItem.name,
+      classItem.subject,
+      classItem.room,
+      teacherLabel(classItem),
+    ]).includes(search))
+  }, [classQuery, classes])
 
   const refreshAfterChange = async () => {
     applyLinkingData(await fetchLinkingData())
   }
 
-  const linkStudent = async (event) => {
-    event.preventDefault()
-    if (!selectedStudentId || !selectedClassId) {
-      setNotice({ type: 'error', text: 'Select a student and class before linking.' })
+  const linkClass = async (classItem) => {
+    if (!selectedStudentId || !classItem?.id) {
+      setNotice({ type: 'error', text: 'Select a student before linking a class.' })
       return
     }
 
-    setSaving(true)
+    setSavingId(`link-${classItem.id}`)
     setNotice(null)
 
     try {
-      const response = await api.post(`/api/students/manage/${selectedStudentId}/classes/${selectedClassId}`, {
-        teacher_id: selectedTeacherId || null,
+      const response = await api.post(`/api/students/manage/${selectedStudentId}/classes/${classItem.id}`, {
+        teacher_id: classItem.teacher_id || null,
       })
 
       if (response?.error) throw new Error(response.error)
@@ -137,19 +143,19 @@ export default function StudentClassLinksManager() {
       setNotice({
         type: 'success',
         text: response?.alreadyLinked
-          ? `${selectedStudent?.full_name || 'Student'} was already linked to ${classLabel(selectedClass)}.`
-          : `${selectedStudent?.full_name || 'Student'} linked to ${classLabel(selectedClass)}.`,
+          ? `${selectedStudent?.full_name || 'Student'} was already linked to ${classLabel(classItem)}.`
+          : `${selectedStudent?.full_name || 'Student'} linked to ${classLabel(classItem)}.`,
       })
     } catch (error) {
       setNotice({ type: 'error', text: error.message || 'Could not link student to class.' })
     } finally {
-      setSaving(false)
+      setSavingId(null)
     }
   }
 
-  const unlinkStudent = async (classItem) => {
+  const unlinkClass = async (classItem) => {
     if (!selectedStudentId || !classItem?.id) return
-    setSaving(true)
+    setSavingId(`unlink-${classItem.id}`)
     setNotice(null)
 
     try {
@@ -160,12 +166,12 @@ export default function StudentClassLinksManager() {
     } catch (error) {
       setNotice({ type: 'error', text: error.message || 'Could not remove student from class.' })
     } finally {
-      setSaving(false)
+      setSavingId(null)
     }
   }
 
   const updateClassTeacher = async (classId, teacherId) => {
-    setSaving(true)
+    setSavingId(`teacher-${classId}`)
     setNotice(null)
 
     try {
@@ -179,7 +185,7 @@ export default function StudentClassLinksManager() {
     } catch (error) {
       setNotice({ type: 'error', text: error.message || 'Could not update class teacher.' })
     } finally {
-      setSaving(false)
+      setSavingId(null)
     }
   }
 
@@ -191,9 +197,9 @@ export default function StudentClassLinksManager() {
         <div className="student-table-head">
           <div>
             <p className="card-title">Student-Class Linking</p>
-            <h3>Link students to classes and class teachers.</h3>
+            <h3>Choose a student, then link classes directly.</h3>
           </div>
-          <button type="button" className="btn-ghost" onClick={loadData}>
+          <button type="button" className="btn-ghost" onClick={loadData} disabled={Boolean(savingId)}>
             <RefreshCw size={16} strokeWidth={2.2} />
             Refresh
           </button>
@@ -204,69 +210,134 @@ export default function StudentClassLinksManager() {
             {notice.text}
           </p>
         )}
+      </section>
 
-        <form className="linking-form" onSubmit={linkStudent}>
+      <section className="linking-workspace">
+        <div className="linking-card">
+          <div className="student-table-head">
+            <div>
+              <p className="card-title">Students</p>
+              <h3>{filteredStudents.length}/{students.length} shown</h3>
+            </div>
+          </div>
+
           <label className="student-search">
             <Search size={16} strokeWidth={2.2} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search student name, email, ID, kainga"
+              placeholder="Search name, email, ID, kainga"
             />
           </label>
 
-          <div className="login-field">
-            <label htmlFor="link-student">Student</label>
-            <select
-              id="link-student"
-              className="session-select"
-              value={selectedStudentId}
-              onChange={(event) => setSelectedStudentId(event.target.value)}
-            >
-              {filteredStudents.map((student) => (
-                <option key={student.id} value={student.id}>
-                  {student.full_name} - {student.student_number || 'No ID'}
-                </option>
-              ))}
-            </select>
+          <div className="linking-picker-list">
+            {filteredStudents.length === 0 ? (
+              <p className="empty-state">No students match this search.</p>
+            ) : (
+              filteredStudents.map((student) => {
+                const active = student.id === selectedStudentId
+
+                return (
+                  <button
+                    key={student.id}
+                    type="button"
+                    className={`linking-student-option ${active ? 'is-active' : ''}`}
+                    onClick={() => setSelectedStudentId(student.id)}
+                  >
+                    <span>
+                      <strong>{student.full_name}</strong>
+                      <small>{student.student_number || student.email || 'No ID'}</small>
+                    </span>
+                    <em>{student.classes?.length || 0}</em>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="linking-card">
+          <div className="student-table-head">
+            <div>
+              <p className="card-title">Classes</p>
+              <h3>{selectedStudent ? selectedStudent.full_name : 'No student selected'}</h3>
+            </div>
+            <span className="student-email-count">{currentLinks.length}/{classes.length} linked</span>
           </div>
 
-          <div className="login-field">
-            <label htmlFor="link-class">Class / subject</label>
-            <select
-              id="link-class"
-              className="session-select"
-              value={selectedClassId}
-              onChange={(event) => setSelectedClassId(event.target.value)}
-            >
-              {classes.map((classItem) => (
-                <option key={classItem.id} value={classItem.id}>
-                  {classLabel(classItem)}{classItem.room ? ` (${classItem.room})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+          <label className="student-search">
+            <Search size={16} strokeWidth={2.2} />
+            <input
+              value={classQuery}
+              onChange={(event) => setClassQuery(event.target.value)}
+              placeholder="Search class, subject, room, teacher"
+            />
+          </label>
 
-          <div className="login-field">
-            <label htmlFor="link-teacher">Teacher</label>
-            <select
-              id="link-teacher"
-              className="session-select"
-              value={selectedTeacherId}
-              onChange={(event) => setSelectedTeacherId(event.target.value)}
-            >
-              <option value="">Keep current teacher</option>
-              {teachers.map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>
-              ))}
-            </select>
-          </div>
+          {!selectedStudent ? (
+            <div className="portal-empty">
+              <strong>Select a student first.</strong>
+              <span>Class link actions appear after a student is selected.</span>
+            </div>
+          ) : filteredClasses.length === 0 ? (
+            <p className="empty-state">No classes match this search.</p>
+          ) : (
+            <div className="linking-class-list">
+              {filteredClasses.map((classItem) => {
+                const linked = linkedClassIds.has(classItem.id)
+                const rowSaving = savingId?.endsWith(classItem.id)
 
-          <button type="submit" disabled={saving || !filteredStudents.length || !classes.length}>
-            <UserPlus size={16} strokeWidth={2.2} />
-            {saving ? 'Linking...' : 'Link Student'}
-          </button>
-        </form>
+                return (
+                  <div key={classItem.id} className={`linking-class-row ${linked ? 'is-linked' : ''}`}>
+                    <div>
+                      <strong>{classLabel(classItem)}</strong>
+                      <span>
+                        {classItem.room ? `Room ${classItem.room}` : 'Room not set'} - {teacherLabel(classItem)}
+                      </span>
+                    </div>
+
+                    <div className="linking-class-actions">
+                      <select
+                        className="session-select"
+                        value={classItem.teacher_id || ''}
+                        onChange={(event) => updateClassTeacher(classItem.id, event.target.value)}
+                        disabled={Boolean(savingId)}
+                        aria-label={`Teacher for ${classItem.name}`}
+                      >
+                        <option value="">No teacher</option>
+                        {teachers.map((teacher) => (
+                          <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>
+                        ))}
+                      </select>
+
+                      {linked ? (
+                        <button
+                          type="button"
+                          className="account-danger-button"
+                          onClick={() => unlinkClass(classItem)}
+                          disabled={Boolean(savingId)}
+                        >
+                          <Trash2 size={14} strokeWidth={2.2} />
+                          {rowSaving ? 'Removing...' : 'Remove'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => linkClass(classItem)}
+                          disabled={Boolean(savingId)}
+                        >
+                          <UserPlus size={14} strokeWidth={2.2} />
+                          {rowSaving ? 'Linking...' : 'Link'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="linking-grid">
@@ -277,7 +348,7 @@ export default function StudentClassLinksManager() {
           ) : currentLinks.length === 0 ? (
             <div className="portal-empty">
               <strong>{selectedStudent.full_name} has no linked classes.</strong>
-              <span>Use the form above to add their first class.</span>
+              <span>Use the class list above to add their first class.</span>
             </div>
           ) : (
             <div className="linking-list">
@@ -289,7 +360,12 @@ export default function StudentClassLinksManager() {
                       {classItem.room ? `Room ${classItem.room}` : 'Room not set'} - {teacherLabel(classItem)}
                     </span>
                   </div>
-                  <button type="button" className="account-danger-button" onClick={() => unlinkStudent(classItem)} disabled={saving}>
+                  <button
+                    type="button"
+                    className="account-danger-button"
+                    onClick={() => unlinkClass(classItem)}
+                    disabled={Boolean(savingId)}
+                  >
                     <Trash2 size={14} strokeWidth={2.2} />
                     Remove
                   </button>
@@ -300,77 +376,45 @@ export default function StudentClassLinksManager() {
         </div>
 
         <div className="linking-card">
-          <p className="card-title">Class teacher assignments</p>
-          {classes.length === 0 ? (
-            <p className="empty-state">No classes yet.</p>
-          ) : (
-            <div className="linking-list">
-              {classes.map((classItem) => (
-                <div key={classItem.id} className="linking-row">
-                  <div>
-                    <strong>{classLabel(classItem)}</strong>
-                    <span>{classItem.room ? `Room ${classItem.room}` : 'Room not set'}</span>
-                  </div>
-                  <select
-                    className="session-select"
-                    value={classItem.teacher_id || ''}
-                    onChange={(event) => updateClassTeacher(classItem.id, event.target.value)}
-                    disabled={saving}
-                    aria-label={`Teacher for ${classItem.name}`}
-                  >
-                    <option value="">No teacher</option>
-                    {teachers.map((teacher) => (
-                      <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="linking-card">
-        <p className="card-title">Linked students</p>
-        <div className="student-table-wrap">
-          <table className="attendance-table">
-            <thead>
-              <tr>
-                <th>Student</th>
-                <th>Kainga</th>
-                <th>Classes</th>
-                <th>Teachers</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.map((student) => (
-                <tr
-                  key={student.id}
-                  className="student-clickable-row"
-                  tabIndex={0}
-                  onClick={() => setSelectedStudentId(student.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault()
-                      setSelectedStudentId(student.id)
-                    }
-                  }}
-                >
-                  <td>
-                    <strong>{student.full_name}</strong>
-                    <span className="student-table-sub">{student.student_number || student.email}</span>
-                  </td>
-                  <td className="student-id">{student.kainga || '-'}</td>
-                  <td className="student-id">{student.classes?.map((classItem) => classLabel(classItem)).join(', ') || 'None'}</td>
-                  <td className="student-id">{student.classes?.map((classItem) => teacherLabel(classItem)).join(', ') || '-'}</td>
+          <p className="card-title">Linked students</p>
+          <div className="student-table-wrap">
+            <table className="attendance-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Kainga</th>
+                  <th>Classes</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="linking-helper">
-          <Link2 size={16} strokeWidth={2.2} />
-          <span>{selectedStudent ? `${selectedStudent.full_name} selected` : 'No student selected'}</span>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => (
+                  <tr
+                    key={student.id}
+                    className="student-clickable-row"
+                    tabIndex={0}
+                    onClick={() => setSelectedStudentId(student.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        setSelectedStudentId(student.id)
+                      }
+                    }}
+                  >
+                    <td>
+                      <strong>{student.full_name}</strong>
+                      <span className="student-table-sub">{student.student_number || student.email}</span>
+                    </td>
+                    <td className="student-id">{student.kainga || '-'}</td>
+                    <td className="student-id">{student.classes?.map((classItem) => classLabel(classItem)).join(', ') || 'None'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="linking-helper">
+            <Link2 size={16} strokeWidth={2.2} />
+            <span>{selectedStudent ? `${selectedStudent.full_name} selected` : 'No student selected'}</span>
+          </div>
         </div>
       </section>
     </div>

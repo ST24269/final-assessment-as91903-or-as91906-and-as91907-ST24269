@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertCircle, ArrowRight, CalendarDays, Clock3, MessageSquareWarning } from 'lucide-react'
+import { AlertCircle, ArrowRight, CalendarDays, MessageSquareWarning } from 'lucide-react'
 import { api, supabase } from '../api/client'
 import Layout from '../components/Layout'
 import Card from '../components/Card'
 import Loader from '../components/Loader'
+import TimetableView from '../components/TimetableView'
 
 const STATUS_LABELS = ['present', 'late', 'absent', 'excused']
 
@@ -18,29 +19,6 @@ function formatDate(value) {
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
-}
-
-function timeLabel(value) {
-  return value ? String(value).slice(0, 5) : '--:--'
-}
-
-function dayOfWeekFor(date = new Date()) {
-  const day = date.getDay()
-  return day === 0 ? 7 : day
-}
-
-function periodDate(timeString) {
-  if (!timeString) return null
-  const [hour = '0', minute = '0', second = '0'] = String(timeString).split(':')
-  const now = new Date()
-  return new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    Number(hour),
-    Number(minute),
-    Number(second),
-  )
 }
 
 function getAttendanceColor(percent) {
@@ -61,18 +39,6 @@ function StatusBadge({ status }) {
 function classLabel(classItem) {
   if (!classItem) return 'Class'
   return `${classItem.name || 'Class'}${classItem.subject ? ` - ${classItem.subject}` : ''}`
-}
-
-function periodClassLabel(period) {
-  return period?.class?.name || period?.subject || 'Class'
-}
-
-function periodSubject(period) {
-  return period?.subject || period?.class?.subject || 'Subject not set'
-}
-
-function periodTeacher(period) {
-  return period?.teacher?.full_name || period?.class?.profiles?.full_name || 'Teacher not assigned'
 }
 
 export default function StudentPage({ session, profile }) {
@@ -182,29 +148,6 @@ export default function StudentPage({ session, profile }) {
       flagged: attendance.filter((record) => record.flagged).length,
     }
   }, [attendance])
-
-  const todayPeriods = useMemo(() => {
-    const provided = timetable.todayPeriods?.length ? timetable.todayPeriods : timetable.periods
-    return (provided || [])
-      .filter((period) => period.day_of_week === dayOfWeekFor())
-      .sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)))
-  }, [timetable])
-
-  const currentAndNext = useMemo(() => {
-    const now = new Date()
-    const enriched = todayPeriods.map((period) => ({
-      ...period,
-      startDate: periodDate(period.start_time),
-      endDate: periodDate(period.end_time),
-    }))
-    const currentClass = enriched.find((period) => period.startDate <= now && period.endDate > now) || null
-    const nextClass = enriched.find((period) => period.startDate > now) || null
-
-    return {
-      currentClass: currentClass || timetable.currentClass || null,
-      nextClass: nextClass || timetable.nextClass || null,
-    }
-  }, [todayPeriods, timetable.currentClass, timetable.nextClass])
 
   const classStats = useMemo(() => classes.map((classItem) => {
     const records = attendance.filter((record) => record.sessions?.classes?.id === classItem.id)
@@ -349,61 +292,15 @@ export default function StudentPage({ session, profile }) {
             ))}
           </section>
 
-          <section className="portal-section">
-            <div className="portal-section-header">
-              <div>
-                <p>Today&apos;s timetable</p>
-                <h2 className="student-section-title">{new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</h2>
-              </div>
-            </div>
-            <div className="student-next-class">
-              <div className="portal-side-card">
-                <span>{currentAndNext.currentClass ? 'Current class' : 'Next class'}</span>
-                {currentAndNext.currentClass || currentAndNext.nextClass ? (
-                  (() => {
-                    const period = currentAndNext.currentClass || currentAndNext.nextClass
-                    return (
-                      <>
-                        <strong>{periodClassLabel(period)}</strong>
-                        <p>{periodSubject(period)}</p>
-                        <p>{periodTeacher(period)}</p>
-                        <p>
-                          {timeLabel(period.start_time)} - {timeLabel(period.end_time)}
-                          {period.period_number ? ` - Period ${period.period_number}` : ''}
-                        </p>
-                        <p>{period.room ? `Room ${period.room}` : 'Room not set'}</p>
-                      </>
-                    )
-                  })()
-                ) : (
-                  <strong>No more classes scheduled for today.</strong>
-                )}
-              </div>
-              <div className="student-timetable-list">
-                {todayPeriods.length === 0 ? (
-                  <div className="portal-empty">
-                    <strong>No timetable periods today.</strong>
-                    <span>Your timetable appears here once an admin schedules periods for your linked classes.</span>
-                  </div>
-                ) : (
-                  todayPeriods.map((period) => (
-                    <div key={period.id} className="student-timetable-row">
-                      <strong>
-                        <Clock3 size={15} strokeWidth={2.2} />
-                        {timeLabel(period.start_time)}-{timeLabel(period.end_time)}
-                        {period.period_number ? ` - Period ${period.period_number}` : ''}
-                      </strong>
-                      <span>
-                        {periodClassLabel(period)} - {periodSubject(period)}
-                        {period.room ? ` - Room ${period.room}` : ''}
-                      </span>
-                      <span>{periodTeacher(period)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </section>
+          <TimetableView
+            periods={timetable.periods}
+            todayPeriods={timetable.todayPeriods}
+            currentClass={timetable.currentClass}
+            nextClass={timetable.nextClass}
+            title="Student timetable"
+            subtitle={new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}
+            emptyMessage="No timetable periods are scheduled for your linked classes."
+          />
 
           <Card title="Class attendance">
             {classStats.length === 0 ? (

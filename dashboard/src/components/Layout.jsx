@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Radio } from 'lucide-react'
 import AppFooter from './AppFooter'
 import ProfileMenu from './ProfileMenu'
+import TagoLogo from './TagoLogo'
 import ThemeToggle from './ThemeToggle'
 
 const ROLE_LABELS = {
@@ -24,11 +24,8 @@ export default function Layout({ children, email, name, role, profileId }) {
       <div className="app-header-wrap">
         <header className={`app-header ${scrolled ? 'is-scrolled' : ''}`}>
           <div className="app-brand">
-            <div className="app-brand-mark">
-              <Radio size={18} strokeWidth={2.4} />
-            </div>
-            <div>
-              <strong>AttendRFID</strong>
+            <TagoLogo showWord size={18} markClassName="app-brand-mark" />
+            <div className="app-brand-copy">
               <span>{ROLE_LABELS[role] || 'Dashboard'}</span>
             </div>
           </div>

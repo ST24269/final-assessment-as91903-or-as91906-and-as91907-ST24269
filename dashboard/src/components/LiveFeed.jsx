@@ -8,30 +8,26 @@ export default function LiveFeed({ events = [] }) {
   return (
     <Card title="Recent scans">
       {events.length === 0 ? (
-        <p className="flex items-center gap-2 text-[0.78rem] font-mono text-[#4A5568]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#4A5568]" />
+        <p className="live-feed-empty">
+          <span />
           Waiting for RFID scans
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="live-feed-list">
           {events.map((event) => (
             <div
               key={event.id}
-              className={`flex items-center justify-between rounded-lg border border-l-2 px-4 py-2.5 text-sm font-mono ${
-                event.flagged
-                  ? 'border-red-500/[0.12] border-l-red-400 bg-red-500/[0.05]'
-                  : 'border-emerald-500/[0.12] border-l-emerald-400 bg-emerald-500/[0.05]'
-              }`}
+              className={`live-feed-row ${event.flagged ? 'is-flagged' : 'is-ok'}`}
             >
-              <div className="min-w-0">
-                <p className={event.flagged ? 'text-red-400' : 'text-emerald-400'}>
+              <div>
+                <p>
                   {event.students?.full_name || 'Unknown student'}
                 </p>
-                <p className="mt-0.5 truncate text-[0.7rem] text-[#8B9BB0]">
+                <small>
                   {event.flagged ? event.flag_reason || 'Flagged scan' : event.status || 'scanned'}
-                </p>
+                </small>
               </div>
-              <span className="shrink-0 text-[0.75rem] text-[#8B9BB0]">
+              <span>
                 {formatTime(event.scanned_at)}
               </span>
             </div>

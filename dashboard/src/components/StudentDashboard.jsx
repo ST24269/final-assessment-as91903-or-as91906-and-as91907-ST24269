@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Radio, TriangleAlert } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import { supabase } from '../api/client'
+import TagoLogo from './TagoLogo'
 
 export default function StudentDashboard({ session }) {
   const [attendance, setAttendance] = useState([])
@@ -105,10 +106,7 @@ export default function StudentDashboard({ session }) {
     <div className="dashboard">
       <header className="dashboard-header">
         <div className="header-brand">
-          <div className="header-brand-icon">
-            <Radio size={18} strokeWidth={2.4} />
-          </div>
-          <h1>AttendRFID</h1>
+          <TagoLogo showWord size={18} markClassName="header-brand-icon" />
         </div>
         <div className="header-right">
           <span className="header-email">{session.user.email}</span>

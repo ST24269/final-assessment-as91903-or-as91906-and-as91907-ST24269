@@ -55,11 +55,11 @@ router.post('/forgot-password', async (req, res) => {
 
     const emailResult = await sendEmail({
       to: email,
-      subject: 'Reset your AttendRFID password',
+      subject: 'Reset your Tago password',
       text: [
         'Kia ora,',
         '',
-        'Use this link to reset your AttendRFID password:',
+        'Use this link to reset your Tago password:',
         resetLink,
         '',
         'This link expires automatically. If you did not request this, you can ignore this email.',

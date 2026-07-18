@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { FileText, GraduationCap, Home, LogIn, Menu, ShieldCheck, UsersRound, X } from 'lucide-react'
 import AppFooter from './AppFooter'
+import TagoLogo from './TagoLogo'
 import ThemeToggle from './ThemeToggle'
 
 const loginLinks = [
@@ -30,13 +31,10 @@ export default function PublicSiteLayout({ children }) {
     <div className="public-site">
       <header className={`public-nav-wrap${menuOpen ? ' is-open' : ''}`}>
         <nav className="public-nav" aria-label="Public navigation">
-          <Link className="public-brand" to="/" aria-label="AttendRFID home">
-            <span className="public-brand-mark" aria-hidden="true">
-              <img src="/favicon.svg" alt="" width="28" height="28" />
-            </span>
+          <Link className="public-brand" to="/" aria-label="Tago home">
+            <TagoLogo showWord markClassName="public-brand-mark" />
             <span className="public-brand-copy">
-              <strong>AttendRFID</strong>
-              <em>CSC Attendance System</em>
+              <em>School attendance system</em>
             </span>
           </Link>
 

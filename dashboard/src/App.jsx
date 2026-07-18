@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import { supabase } from './api/client'
+import { useState, useEffect, useRef } from 'react'
+import { clientConfigError, supabase } from './api/client'
 import AdminLoginPage from './pages/AdminLoginPage'
 import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
@@ -15,8 +15,8 @@ import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
 import Loader from './components/Loader'
 import { canAccessAccountSection } from './config/permissions'
 
-const LOGIN_ROLE_KEY = 'attendrfid-login-role'
-const LOGIN_NOTICE_KEY = 'attendrfid-login-notice'
+const LOGIN_ROLE_KEY = 'tago-login-role'
+const LOGIN_NOTICE_KEY = 'tago-login-notice'
 const VALID_ROLES = ['student', 'teacher', 'admin']
 
 function isValidRole(role) {
@@ -24,11 +24,48 @@ function isValidRole(role) {
 }
 
 function writeLoginNotice(notice) {
-  window.sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify(notice))
+  try {
+    window.sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify(notice))
+  } catch {
+    // Storage can be unavailable in strict browser privacy modes.
+  }
 }
 
 function clearLoginIntent() {
-  window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+  try {
+    window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+  } catch {
+    // Storage can be unavailable in strict browser privacy modes.
+  }
+}
+
+function readLoginIntent() {
+  try {
+    return window.sessionStorage.getItem(LOGIN_ROLE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function StartupError({ message }) {
+  return (
+    <main className="app-failure" role="alert">
+      <section className="app-failure-panel">
+        <p className="app-failure-kicker">Configuration needed</p>
+        <h1>Tago cannot connect yet.</h1>
+        <p>{message}</p>
+        <p>
+          The service-role key still belongs on the backend only. The dashboard
+          should only receive Vite variables that begin with VITE_.
+        </p>
+        <div className="app-failure-actions">
+          <button type="button" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
+      </section>
+    </main>
+  )
 }
 
 function ProtectedRoute({ session, profile, role, children }) {
@@ -110,14 +147,20 @@ function LoginRoute({ session, profile, role, setSession, setProfile, children }
 }
 
 export default function App() {
+  const configReady = Boolean(supabase && !clientConfigError)
   const [session, setSession] = useState(undefined)
   const [profile, setProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState(null)
+  const lastSessionUserId = useRef(null)
   const userId = session?.user?.id
   const sessionReady = session !== undefined
 
   useEffect(() => {
+    if (!configReady) {
+      return undefined
+    }
+
     const getInitialSession = async () => {
       const { data, error } = await supabase.auth.getSession()
 
@@ -127,6 +170,7 @@ export default function App() {
         return
       }
 
+      lastSessionUserId.current = data.session?.user?.id || null
       setSession(data.session ?? null)
     }
 
@@ -135,13 +179,17 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      const nextUserId = session?.user?.id || null
+      const userChanged = nextUserId !== lastSessionUserId.current
+      lastSessionUserId.current = nextUserId
+
       if (event === 'SIGNED_OUT') {
         clearLoginIntent()
         setProfile(null)
         setProfileError(null)
       }
 
-      if (event === 'SIGNED_IN') {
+      if (event === 'SIGNED_IN' && userChanged) {
         setProfile(null)
         setProfileError(null)
       }
@@ -150,10 +198,11 @@ export default function App() {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [configReady])
 
   useEffect(() => {
     const fetchProfile = async () => {
+      if (!configReady) return
       if (!sessionReady) return
 
       if (!userId) {
@@ -200,7 +249,7 @@ export default function App() {
           return
         }
 
-        const expectedRole = window.sessionStorage.getItem(LOGIN_ROLE_KEY)
+        const expectedRole = readLoginIntent()
         if (expectedRole && data.role !== expectedRole) {
           writeLoginNotice({
             type: 'role-mismatch',
@@ -226,12 +275,16 @@ export default function App() {
     }
 
     fetchProfile()
-  }, [sessionReady, userId])
+  }, [configReady, sessionReady, userId])
+
+  if (!configReady) {
+    return <StartupError message={clientConfigError} />
+  }
 
   if (session === undefined) {
     return (
       <Loader
-        title="Connecting to AttendRFID"
+        title="Connecting to Tago"
         subtitle="Checking your saved session"
       />
     )

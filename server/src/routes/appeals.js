@@ -166,7 +166,7 @@ async function loadNotificationRecipients({ student, classId }) {
 
 async function sendAppealEmail({ appeal, student, classRecord, attendanceRecord, requesterEmail }) {
   const recipients = await loadNotificationRecipients({ student, classId: appeal.class_id })
-  const subject = `[AttendRFID] Attendance appeal - ${student.full_name}`
+  const subject = `[Tago] Attendance appeal - ${student.full_name}`
   const classLabel = classRecord
     ? `${classRecord.name} (${classRecord.subject})`
     : 'Class not selected'

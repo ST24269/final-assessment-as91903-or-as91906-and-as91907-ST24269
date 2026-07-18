@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
-import { supabase } from '../api/client'
-import { api } from '../api/client'
+import { AlertCircle, RefreshCw } from 'lucide-react'
+import { api, supabase } from '../api/client'
 import Layout from '../components/Layout'
 import AttendanceTable from '../components/AttendanceTable'
 import AppealsPanel from '../components/AppealsPanel'
 import SessionPanel from '../components/SessionPanel'
 import LiveFeed from '../components/LiveFeed'
+import TimetableView from '../components/TimetableView'
 
 async function fetchSessionAttendance(sessionId) {
   const data = await api.get(`/api/attendance/session/${sessionId}`)
@@ -26,6 +26,9 @@ function formatTime(value) {
 export default function TeacherPage({ session, profile }) {
   const [activeSession, setActiveSession] = useState(null)
   const [attendance, setAttendance] = useState([])
+  const [timetablePeriods, setTimetablePeriods] = useState([])
+  const [timetableLoading, setTimetableLoading] = useState(true)
+  const [timetableError, setTimetableError] = useState(null)
   const [loadingAttendance, setLoadingAttendance] = useState(false)
   const [attendanceError, setAttendanceError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -39,6 +42,38 @@ export default function TeacherPage({ session, profile }) {
       setLastUpdated(null)
     }
   }
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadTimetable() {
+      setTimetableLoading(true)
+      setTimetableError(null)
+
+      try {
+        const data = await api.get('/api/timetable/teacher')
+        if (cancelled) return
+
+        if (data?.error) {
+          setTimetablePeriods([])
+          setTimetableError(data.error)
+        } else {
+          setTimetablePeriods(Array.isArray(data) ? data : [])
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTimetablePeriods([])
+          setTimetableError(err.message || 'Could not load timetable.')
+        }
+      } finally {
+        if (!cancelled) setTimetableLoading(false)
+      }
+    }
+
+    loadTimetable()
+
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (!activeSession) return
@@ -132,6 +167,20 @@ export default function TeacherPage({ session, profile }) {
 
   return (
     <Layout email={session.user.email} name={profile?.full_name} role="teacher" profileId={profile?.id}>
+      <TimetableView
+        periods={timetablePeriods}
+        title="Teacher timetable"
+        subtitle={timetableLoading ? 'Loading your class schedule' : 'Classes assigned to you'}
+        emptyMessage={timetableLoading ? 'Loading timetable...' : 'No timetable periods are assigned to you yet.'}
+      />
+
+      {timetableError && (
+        <div className="portal-alert">
+          <AlertCircle size={18} strokeWidth={2.2} />
+          {timetableError}
+        </div>
+      )}
+
       <SessionPanel activeSession={activeSession} setActiveSession={handleActiveSessionChange} />
       <AppealsPanel mode="teacher" />
 
@@ -162,12 +211,12 @@ export default function TeacherPage({ session, profile }) {
                 <button
                   onClick={refreshAttendance}
                   disabled={loadingAttendance}
-                  className="rounded-lg border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-sm font-mono text-white transition hover:bg-white/[0.08] disabled:opacity-50"
+                  className="teacher-refresh-button"
                 >
                   <RefreshCw size={15} strokeWidth={2.2} />
                   {loadingAttendance ? 'Refreshing...' : 'Refresh'}
                 </button>
-                <div className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-[0.75rem] font-mono text-[#8B9BB0]">
+                <div className="teacher-refresh-time">
                   Updated {lastUpdated ? formatTime(lastUpdated) : 'not yet'}
                 </div>
               </div>

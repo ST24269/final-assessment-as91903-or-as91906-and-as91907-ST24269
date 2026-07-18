@@ -68,7 +68,14 @@ function getStoredPreferences(profileId) {
     return { emailAlerts: true, absenceAlerts: true, contactEmail: '' }
   }
 
-  const stored = window.localStorage.getItem(`attendrfid-account-settings-${profileId}`)
+  const stored = (() => {
+    try {
+      return window.localStorage.getItem(`tago-account-settings-${profileId}`)
+    } catch {
+      return null
+    }
+  })()
+
   if (!stored) return { emailAlerts: true, absenceAlerts: true, contactEmail: '' }
 
   try {
@@ -85,7 +92,12 @@ function getStoredPreferences(profileId) {
 
 function getStoredAvatar(profileId) {
   if (typeof window === 'undefined' || !profileId) return ''
-  return window.localStorage.getItem(`attendrfid-avatar-${profileId}`) || ''
+
+  try {
+    return window.localStorage.getItem(`tago-avatar-${profileId}`) || ''
+  } catch {
+    return ''
+  }
 }
 
 function ActionNotice({ notice }) {
@@ -314,9 +326,16 @@ export default function AccountPage({ session, profile, section = 'profile', set
     const reader = new FileReader()
     reader.onload = () => {
       const nextAvatar = String(reader.result || '')
-      window.localStorage.setItem(`attendrfid-avatar-${profile.id}`, nextAvatar)
+
+      try {
+        window.localStorage.setItem(`tago-avatar-${profile.id}`, nextAvatar)
+      } catch {
+        setActionNotice('profile', 'error', 'This browser could not save the profile picture locally.')
+        return
+      }
+
       setAvatarUrl(nextAvatar)
-      window.dispatchEvent(new CustomEvent('attendrfid-avatar-updated', {
+      window.dispatchEvent(new CustomEvent('tago-avatar-updated', {
         detail: { profileId: profile.id, avatarUrl: nextAvatar },
       }))
       setActionNotice('profile', 'success', 'Profile picture updated on this device.')
@@ -325,9 +344,15 @@ export default function AccountPage({ session, profile, section = 'profile', set
   }
 
   const removeAvatar = () => {
-    window.localStorage.removeItem(`attendrfid-avatar-${profile.id}`)
+    try {
+      window.localStorage.removeItem(`tago-avatar-${profile.id}`)
+    } catch {
+      setActionNotice('profile', 'error', 'This browser could not remove the saved profile picture.')
+      return
+    }
+
     setAvatarUrl('')
-    window.dispatchEvent(new CustomEvent('attendrfid-avatar-updated', {
+    window.dispatchEvent(new CustomEvent('tago-avatar-updated', {
       detail: { profileId: profile.id, avatarUrl: '' },
     }))
     setActionNotice('profile', 'success', 'Profile picture removed.')
@@ -368,7 +393,13 @@ export default function AccountPage({ session, profile, section = 'profile', set
   }
 
   const savePreferences = () => {
-    window.localStorage.setItem(`attendrfid-account-settings-${profile.id}`, JSON.stringify(preferences))
+    try {
+      window.localStorage.setItem(`tago-account-settings-${profile.id}`, JSON.stringify(preferences))
+    } catch {
+      setActionNotice('settings', 'error', 'This browser could not save settings locally.')
+      return
+    }
+
     setActionNotice('settings', 'success', 'Settings saved on this device.')
   }
 
@@ -632,7 +663,7 @@ export default function AccountPage({ session, profile, section = 'profile', set
           ) : (
             <div className="portal-empty">
               <strong>Attendance summary is for student accounts.</strong>
-              <span>Staff accounts use AttendRFID to manage sessions, readers, and records rather than record personal attendance.</span>
+              <span>Staff accounts use Tago to manage sessions, readers, and records rather than record personal attendance.</span>
             </div>
           )}
         </Card>

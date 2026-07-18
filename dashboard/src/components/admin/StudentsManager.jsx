@@ -95,7 +95,7 @@ function exportStudents(students) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = 'attendrfid-students.csv'
+  link.download = 'tago-students.csv'
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -283,7 +283,7 @@ function ConfirmModal({ action, student, onClose, onConfirm, saving }) {
           <ShieldAlert size={18} strokeWidth={2.2} />
           <p>
             {isDelete
-              ? 'If this student has attendance history, AttendRFID will disable the record instead of deleting it so logs are preserved.'
+              ? 'If this student has attendance history, Tago will disable the record instead of deleting it so logs are preserved.'
               : 'Disabling a student deactivates their RFID card and removes them from active attendance scanning.'}
           </p>
         </div>
@@ -324,9 +324,19 @@ export default function StudentsManager() {
   const emailCardRef = useRef(null)
   const emailSubjectRef = useRef(null)
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    setNotice(null)
+  // Loads students/audit/teacher data.
+  // Pass { silent: true } for background refreshes triggered after an
+  // action (create/edit/rfid/status change etc.) so the success/error
+  // notice we just set isn't wiped out and the table doesn't flash back
+  // to the full-page loading state.
+  const loadData = useCallback(async (options = {}) => {
+    const { silent = false } = options
+
+    if (!silent) {
+      setLoading(true)
+      setNotice(null)
+    }
+
     const { studentData, auditData, teachers: teacherData } = await fetchStudentManagementData()
 
     if (studentData?.error) {
@@ -337,7 +347,8 @@ export default function StudentsManager() {
 
     if (!auditData?.error) setAuditLogs(Array.isArray(auditData) ? auditData : [])
     setTeachers(teacherData)
-    setLoading(false)
+
+    if (!silent) setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -482,7 +493,7 @@ export default function StudentsManager() {
     }
 
     setFormModal(null)
-    loadData()
+    loadData({ silent: true })
   }
 
   const openRfidModal = (student) => {
@@ -507,7 +518,7 @@ export default function StudentsManager() {
     replaceStudent(data.student)
     setNotice({ type: 'success', text: data.message || 'RFID details updated.' })
     setRfidModal(null)
-    loadData()
+    loadData({ silent: true })
   }
 
   const runConfirmAction = async () => {
@@ -533,7 +544,7 @@ export default function StudentsManager() {
 
     setNotice({ type: 'success', text: data.message || 'Student updated.' })
     setConfirmModal(null)
-    loadData()
+    loadData({ silent: true })
   }
 
   const reactivateStudent = async (student) => {
@@ -548,7 +559,7 @@ export default function StudentsManager() {
 
     replaceStudent(data.student)
     setNotice({ type: 'success', text: data.message || 'Student reactivated.' })
-    loadData()
+    loadData({ silent: true })
   }
 
   const resendConfirmation = async (student) => {
@@ -566,7 +577,7 @@ export default function StudentsManager() {
       type: data.emailSent ? 'success' : 'error',
       text: data.emailSent ? 'Confirmation email sent.' : `Email not sent: ${data.emailError}`,
     })
-    loadData()
+    loadData({ silent: true })
   }
 
   const toggleSelectAll = (checked) => {
@@ -595,7 +606,7 @@ export default function StudentsManager() {
 
     setSelectedIds([])
     setNotice({ type: 'success', text: `${selectedStudents.length} student(s) disabled.` })
-    loadData()
+    loadData({ silent: true })
   }
 
   const bulkResend = async () => {
@@ -614,7 +625,7 @@ export default function StudentsManager() {
 
     setSelectedIds([])
     setNotice({ type: 'success', text: `Confirmation email requested for ${selectedStudents.length} student(s).` })
-    loadData()
+    loadData({ silent: true })
   }
 
   const openMailtoFallback = (recipients, subject, message, reason) => {
@@ -710,7 +721,7 @@ export default function StudentsManager() {
         data.emailError || 'Email provider is not configured',
       )
     }
-    loadData()
+    loadData({ silent: true })
   }
 
   if (loading) return <div className="loading">loading</div>

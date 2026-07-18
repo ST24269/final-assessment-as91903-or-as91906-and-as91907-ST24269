@@ -3,11 +3,11 @@ import { GraduationCap, ShieldCheck, UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api, supabase } from '../api/client'
 import AppFooter from '../components/AppFooter'
-import SplitText from '../components/SplitText'
+import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 
-const LOGIN_ROLE_KEY = 'attendrfid-login-role'
-const LOGIN_NOTICE_KEY = 'attendrfid-login-notice'
+const LOGIN_ROLE_KEY = 'tago-login-role'
+const LOGIN_NOTICE_KEY = 'tago-login-notice'
 const VALID_ROLES = ['student', 'teacher', 'admin']
 
 const ROLE_COPY = {
@@ -32,10 +32,17 @@ const ROLE_COPY = {
 }
 
 function readStoredLoginNotice(role) {
-  const storedNotice = window.sessionStorage.getItem(LOGIN_NOTICE_KEY)
-  if (!storedNotice) return null
+  const storedNotice = (() => {
+    try {
+      const value = window.sessionStorage.getItem(LOGIN_NOTICE_KEY)
+      window.sessionStorage.removeItem(LOGIN_NOTICE_KEY)
+      return value
+    } catch {
+      return null
+    }
+  })()
 
-  window.sessionStorage.removeItem(LOGIN_NOTICE_KEY)
+  if (!storedNotice) return null
 
   try {
     const parsedNotice = JSON.parse(storedNotice)
@@ -46,9 +53,32 @@ function readStoredLoginNotice(role) {
   }
 }
 
+function setLoginRole(role) {
+  try {
+    window.sessionStorage.setItem(LOGIN_ROLE_KEY, role)
+  } catch {
+    // Login still works without the role hint; App will validate the profile.
+  }
+}
+
+function clearLoginRole() {
+  try {
+    window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+  } catch {
+    // Storage can be unavailable in strict browser privacy modes.
+  }
+}
+
+function clearLoginNotice() {
+  try {
+    window.sessionStorage.removeItem(LOGIN_NOTICE_KEY)
+  } catch {
+    // Storage can be unavailable in strict browser privacy modes.
+  }
+}
+
 export default function LoginPage({ role = 'student' }) {
   const config = ROLE_COPY[role] || ROLE_COPY.student
-  const Icon = config.Icon
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
@@ -71,8 +101,8 @@ export default function LoginPage({ role = 'student' }) {
     setLoading(true)
     setError(null)
     setRoleNotice(null)
-    window.sessionStorage.removeItem(LOGIN_NOTICE_KEY)
-    window.sessionStorage.setItem(LOGIN_ROLE_KEY, role)
+    clearLoginNotice()
+    setLoginRole(role)
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -81,7 +111,7 @@ export default function LoginPage({ role = 'student' }) {
       })
 
       if (error) {
-        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        clearLoginRole()
         setError(error.message)
         return
       }
@@ -94,14 +124,14 @@ export default function LoginPage({ role = 'student' }) {
 
       if (profileError || !profile) {
         await supabase.auth.signOut()
-        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        clearLoginRole()
         setError('No profile is linked to this login. Ask an admin to check your account.')
         return
       }
 
       if (!VALID_ROLES.includes(profile.role)) {
         await supabase.auth.signOut()
-        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        clearLoginRole()
         setRoleNotice({
           type: 'invalid-role',
           actualRole: profile.role,
@@ -111,7 +141,7 @@ export default function LoginPage({ role = 'student' }) {
 
       if (profile.role !== role) {
         await supabase.auth.signOut()
-        window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+        clearLoginRole()
         setRoleNotice({
           type: 'role-mismatch',
           expectedRole: role,
@@ -120,11 +150,11 @@ export default function LoginPage({ role = 'student' }) {
         return
       }
 
-      window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+      clearLoginRole()
     } catch (err) {
-      window.sessionStorage.removeItem(LOGIN_ROLE_KEY)
+      clearLoginRole()
       console.error('Unexpected login error:', err)
-      setError('Could not connect to AttendRFID. Check your connection and try again.')
+      setError('Could not connect to Tago. Check your connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -161,24 +191,10 @@ export default function LoginPage({ role = 'student' }) {
         <form className="login-card" onSubmit={handleLogin} aria-label={`${config.label} sign in`}>
           <div className="login-card-top">
             <div className="login-brand">
-              <div className="login-mark">
-                <Icon size={20} strokeWidth={2.4} />
-              </div>
+              <TagoLogo showWord size={20} markClassName="login-mark" />
               <div>
-                <p>AttendRFID</p>
-                <SplitText
-                  tag="h1"
-                  text={config.title}
-                  delay={45}
-                  duration={0.55}
-                  ease="power3.out"
-                  splitType="chars"
-                  from={{ opacity: 0, y: 18 }}
-                  to={{ opacity: 1, y: 0 }}
-                  threshold={0}
-                  rootMargin="0px"
-                  textAlign="left"
-                />
+                <p>{config.label} portal</p>
+                <h1>{config.title}</h1>
               </div>
             </div>
 
