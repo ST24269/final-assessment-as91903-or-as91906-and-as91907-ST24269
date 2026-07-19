@@ -55,7 +55,7 @@ public:
 
     // Check for duplicate (same UID and timestamp)
     for (JsonObject scan : scans) {
-      if (String(scan["rfid_card_uid"]) == uid && String(scan["scanned_at"]) == timestamp) {
+      if (scan["rfid_card_uid"].as<String>() == uid && scan["scanned_at"].as<String>() == timestamp) {
         Serial.println("Duplicate scan already cached, skipping");
         return false;
       }
@@ -88,7 +88,7 @@ public:
     DeserializationError error = deserializeJson(doc, existing);
     if (error) {
       doc.clear();
-      JsonArray arr = doc.to<JsonArray>();
+      doc.to<JsonArray>();
     }
     return doc;
   }
@@ -101,16 +101,21 @@ public:
     if (error) return;
 
     JsonArray scans = doc.as<JsonArray>();
-    JsonArray newScans;
+
+    // Build the filtered result in its own document, so the array
+    // actually has a memory pool backing it (a bare JsonArray with
+    // no owning JsonDocument silently fails to add elements).
+    DynamicJsonDocument newDoc(4096);
+    JsonArray newScans = newDoc.to<JsonArray>();
 
     for (JsonObject scan : scans) {
-      if (String(scan["rfid_card_uid"]) == uid && String(scan["scanned_at"]) == timestamp) {
+      if (scan["rfid_card_uid"].as<String>() == uid && scan["scanned_at"].as<String>() == timestamp) {
         // Skip - this scan was uploaded
         continue;
       }
       JsonObject newScan = newScans.add<JsonObject>();
-      newScan["rfid_card_uid"] = String(scan["rfid_card_uid"]);
-      newScan["scanned_at"] = String(scan["scanned_at"]);
+      newScan["rfid_card_uid"] = scan["rfid_card_uid"].as<String>();
+      newScan["scanned_at"] = scan["scanned_at"].as<String>();
       newScan["attempts"] = scan["attempts"];
     }
 
@@ -129,7 +134,7 @@ public:
     JsonArray scans = doc.as<JsonArray>();
 
     for (JsonObject scan : scans) {
-      if (String(scan["rfid_card_uid"]) == uid && String(scan["scanned_at"]) == timestamp) {
+      if (scan["rfid_card_uid"].as<String>() == uid && scan["scanned_at"].as<String>() == timestamp) {
         scan["attempts"] = scan["attempts"].as<uint8_t>() + 1;
       }
     }
@@ -147,17 +152,21 @@ public:
     if (error) return;
 
     JsonArray scans = doc.as<JsonArray>();
-    JsonArray newScans;
+
+    // Same fix as markUploaded(): give the filtered array a real
+    // owning document instead of a bare, unbacked JsonArray.
+    DynamicJsonDocument newDoc(4096);
+    JsonArray newScans = newDoc.to<JsonArray>();
 
     for (JsonObject scan : scans) {
       if (scan["attempts"].as<uint8_t>() >= maxAttempts) {
         Serial.printf("Removing failed scan after %d attempts: %s\n",
-          scan["attempts"].as<uint8_t>(), String(scan["rfid_card_uid"]).c_str());
+          scan["attempts"].as<uint8_t>(), scan["rfid_card_uid"].as<String>().c_str());
         continue;
       }
       JsonObject newScan = newScans.add<JsonObject>();
-      newScan["rfid_card_uid"] = String(scan["rfid_card_uid"]);
-      newScan["scanned_at"] = String(scan["scanned_at"]);
+      newScan["rfid_card_uid"] = scan["rfid_card_uid"].as<String>();
+      newScan["scanned_at"] = scan["scanned_at"].as<String>();
       newScan["attempts"] = scan["attempts"];
     }
 

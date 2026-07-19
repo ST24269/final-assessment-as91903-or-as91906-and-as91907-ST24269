@@ -78,7 +78,7 @@ router.post('/scan', async (req, res) => {
     return res.status(409).json({ error: 'Reader is not assigned to a room' })
   }
 
-  // Update reader status
+// Update reader status
   await supabase
     .from('readers')
     .update({
@@ -86,6 +86,19 @@ router.post('/scan', async (req, res) => {
       online_status: 'online'
     })
     .eq('id', reader.id)
+
+  // --- NEW: check for a pending onboarding assignment on this reader ---
+  const { data: pendingOnboarding } = await supabase
+    .from('onboarding_sessions')
+    .select('*, students(*)')
+    .eq('reader_id', reader.id)
+    .eq('status', 'awaiting_scan')
+    .gte('expires_at', new Date().toISOString())
+    .maybeSingle()
+
+  if (pendingOnboarding) {
+    return handleOnboardingTap(pendingOnboarding, normalizedUid, reader, res, startTime)
+  }
 
   // Look up student
   const { data: student, error: studentError } = await supabase
@@ -434,5 +447,75 @@ router.patch('/:id', requireRole('teacher', 'admin'), async (req, res) => {
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
+const { sendEmail } = require('../utils/email')
+const { importStudentTimetable } = require('./onboarding') // exported helper, see onboarding.js
 
+async function handleOnboardingTap(session, normalizedUid, reader, res, startTime) {
+  const student = session.students
+
+  // Make sure this physical card isn't already bound to someone else
+  const { data: existingCard } = await supabase
+    .from('students')
+    .select('id, full_name')
+    .eq('rfid_card_uid', normalizedUid)
+    .maybeSingle()
+
+  if (existingCard && existingCard.id !== student.id) {
+    await logScan(reader.id, normalizedUid, new Date(), 'error', Date.now() - startTime,
+      `Card already assigned to ${existingCard.full_name}`)
+    return res.status(409).json({
+      error: `This card is already assigned to ${existingCard.full_name}`,
+    })
+  }
+
+  const { error: updateError } = await supabase
+    .from('students')
+    .update({ rfid_card_uid: normalizedUid, onboarding_status: 'active' })
+    .eq('id', student.id)
+
+  if (updateError) {
+    return res.status(500).json({ error: updateError.message })
+  }
+
+  await supabase
+    .from('onboarding_sessions')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', session.id)
+
+  await logScan(reader.id, normalizedUid, new Date(), 'success', Date.now() - startTime, 'Onboarding tag assigned')
+
+  // Fire and forget the confirmation email - don't block the reader's response on it
+  sendOnboardingConfirmation(student).catch((err) =>
+    console.error('[onboarding] confirmation email failed:', err.message)
+  )
+
+  return res.status(200).json({
+    success: true,
+    onboarding: true,
+    student: student.full_name,
+    message: `Card assigned to ${student.full_name}`,
+  })
+}
+
+async function sendOnboardingConfirmation(student) {
+  if (!student.guardian_email) return
+
+  const { data: timetable } = await supabase
+    .from('timetable_slots')
+    .select('*')
+    .eq('student_id', student.id)
+    .order('day_of_week')
+    .order('start_time')
+
+  const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const timetableLines = (timetable || [])
+    .map((slot) => `${DAYS[slot.day_of_week]} ${slot.start_time.slice(0, 5)}-${slot.end_time.slice(0, 5)}: ${slot.subject_name}${slot.room ? ' (' + slot.room + ')' : ''}`)
+    .join('\n')
+
+  await sendEmail({
+    to: student.guardian_email,
+    subject: `Tago - ${student.full_name}'s attendance card is active`,
+    text: `Hi,\n\n${student.full_name}'s RFID attendance card has been activated and linked to their timetable.\n\nTimetable:\n${timetableLines || '(no timetable on file)'}\n\nThis is an automated message from Tago.`,
+  })
+}
 module.exports = router

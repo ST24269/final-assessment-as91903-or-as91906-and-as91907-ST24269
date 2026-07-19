@@ -12,6 +12,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "config.h"
+#include "storage.h"
 
 class NetworkManager {
 private:
@@ -141,7 +142,7 @@ public:
       StaticJsonDocument<512> respDoc;
       deserializeJson(respDoc, response);
 
-      if (respDoc.containsKey("pending_scans_count")) {
+      if (respDoc["pending_scans_count"].is<int>()) {
         int pendingCount = respDoc["pending_scans_count"].as<int>();
         if (pendingCount > 0) {
           Serial.printf("Server indicates %d pending scans to upload\n", pendingCount);
@@ -252,13 +253,13 @@ public:
 
     StaticJsonDocument<4096> doc;
     doc["reader_id"] = readerId;
-    doc["reader_api_key"] = readerApiKey;
+    doc["api_key"] = readerApiKey;
     JsonArray scansArray = doc.createNestedArray("scans");
 
     for (JsonObject scan : scans) {
       JsonObject s = scansArray.add<JsonObject>();
- scan["rfid_card_uid"].as<String>()
-scan["scanned_at"].as<String>()
+      s["rfid_card_uid"] = scan["rfid_card_uid"].as<String>();
+      s["scanned_at"] = scan["scanned_at"].as<String>();
     }
 
     String body;
@@ -276,7 +277,7 @@ scan["scanned_at"].as<String>()
       Serial.printf("Bulk upload: %d/%d successful\n", successCount, scans.size());
 
       // Remove successfully uploaded scans
-      if (respDoc.containsKey("results")) {
+      if (respDoc["results"].is<JsonArray>()) {
         JsonArray results = respDoc["results"].as<JsonArray>();
         int i = 0;
         for (JsonObject scan : scans) {
@@ -284,13 +285,13 @@ scan["scanned_at"].as<String>()
             String status = results[i]["status"].as<String>();
             if (status == "success" || status == "skipped") {
               storage.markUploaded(
-scan["rfid_card_uid"].as<String>()
-scan["scanned_at"].as<String>()
+                scan["rfid_card_uid"].as<String>(),
+                scan["scanned_at"].as<String>()
               );
             } else {
               storage.incrementAttempts(
-scan["rfid_card_uid"].as<String>()
-scan["scanned_at"].as<String>()
+                scan["rfid_card_uid"].as<String>(),
+                scan["scanned_at"].as<String>()
               );
             }
           }
@@ -305,6 +306,7 @@ scan["scanned_at"].as<String>()
     }
 
     Serial.printf("Bulk upload failed: HTTP %d\n", httpCode);
+    Serial.printf("Server response: %s\n", response.c_str());
     return false;
   }
 

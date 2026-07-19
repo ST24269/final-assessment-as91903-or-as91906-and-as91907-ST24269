@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { api } from '../api/client'
-import Card from './Card'
+import { api } from '../../api/client'
+import Card from '../Card'
 
 const STATUS_OPTIONS = ['present', 'late', 'absent', 'excused']
 

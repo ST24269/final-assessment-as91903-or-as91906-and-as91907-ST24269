@@ -15,6 +15,7 @@ import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
 import Loader from './components/Loader'
 import { canAccessAccountSection } from './config/permissions'
 
+
 const LOGIN_ROLE_KEY = 'tago-login-role'
 const LOGIN_NOTICE_KEY = 'tago-login-notice'
 const VALID_ROLES = ['student', 'teacher', 'admin']

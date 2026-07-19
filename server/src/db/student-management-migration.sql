@@ -1,4 +1,4 @@
--- AttendRFID Student Management extension
+-- Tago Student Management extension
 -- Safe to run more than once in the Supabase SQL editor.
 -- This migration does not delete or recreate existing student/attendance data.
 

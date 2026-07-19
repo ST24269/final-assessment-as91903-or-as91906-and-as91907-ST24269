@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Play, Square } from 'lucide-react'
-import { api } from '../api/client'
+import { api } from '../../api/client'
 
 function formatSessionTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'time not set'

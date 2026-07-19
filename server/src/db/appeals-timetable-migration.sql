@@ -1,4 +1,4 @@
--- AttendRFID appeals and timetable extension
+-- Tago appeals and timetable extension
 -- Safe to run more than once in the Supabase SQL editor.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;

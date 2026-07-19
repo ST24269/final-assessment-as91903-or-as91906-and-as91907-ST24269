@@ -12,9 +12,22 @@ function getStoredTheme() {
   }
 }
 
-const storedTheme = getStoredTheme()
-document.documentElement.dataset.theme = storedTheme === 'dark' ? 'dark' : 'light'
-document.documentElement.style.colorScheme = document.documentElement.dataset.theme
+function getInitialTheme() {
+  const stored = getStoredTheme()
+  if (stored === 'dark' || stored === 'light') return stored
+
+  // No explicit choice saved yet — follow the OS/browser preference instead
+  // of always forcing light mode.
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+const initialTheme = getInitialTheme()
+document.documentElement.dataset.theme = initialTheme
+document.documentElement.style.colorScheme = initialTheme
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

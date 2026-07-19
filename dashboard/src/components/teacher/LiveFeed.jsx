@@ -1,4 +1,4 @@
-import Card from './Card'
+import Card from '../Card'
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
