@@ -15,7 +15,7 @@
  *
  * Responsibilities:
  *   - Initialize hardware (SPI, RC522)
- *   - Connect to WiFi
+ *   - Provision + connect to WiFi via captive portal (WiFiManager)
  *   - Initialize storage and network managers
  *   - Run main event loop for card detection
  */
@@ -27,7 +27,7 @@
 #include "config.h"
 #include "network.h"
 #include "storage.h"
-
+#include "wifi_manager.h"
 // =======================
 // HARDWARE PIN MAPPING
 // =======================
@@ -57,7 +57,6 @@ void printBootConfig() {
   Serial.printf("Firmware:     %s\n", FIRMWARE_VERSION);
   Serial.printf("Reader ID:    %s\n", READER_ID);
   Serial.printf("Server URL:   %s\n", SERVER_URL);
-  Serial.printf("WiFi SSID:    %s\n", WIFI_SSID);
   Serial.println("========================================");
 }
 
@@ -133,6 +132,9 @@ void setup() {
   // Print configuration for verification
   printBootConfig();
 
+  // Provision + connect WiFi via captive portal (blocks until connected)
+  setupWiFi();
+
   // Initialize RFID hardware
   if (!initRFID()) {
     while (1) delay(1000);
@@ -143,10 +145,10 @@ void setup() {
     while (1) delay(1000);
   }
 
-  // Initialize network manager with config values
+  // Initialize network manager.
+  // WiFi is already connected by setupWiFi() above, so SSID/password are
+  // no longer read from config.h - only server/auth details are needed.
   network = new NetworkManager(
-    WIFI_SSID,
-    WIFI_PASSWORD,
     SERVER_URL,
     READER_API_KEY,
     READER_ID,

@@ -1,7 +1,10 @@
 /*
  * Tago RFID Reader - Network Module
  * ==================================
- * Handles WiFi connection with auto-reconnect and HTTP requests with exponential backoff.
+ * Handles HTTP requests with exponential backoff.
+ * NOTE: WiFi connection itself is handled by WiFiManager (see wifi_manager.h),
+ * which runs before this class is constructed. This class assumes WiFi is
+ * already connected and just monitors/uses it.
  */
 
 #ifndef NETWORK_H
@@ -23,8 +26,6 @@ private:
   bool heartbeatPending;
 
   // Configuration
-  const char* ssid;
-  const char* password;
   const char* serverUrl;
   const char* readerApiKey;
   const char* readerId;
@@ -32,53 +33,23 @@ private:
 
 public:
   NetworkManager(
-    const char* wifiSsid,
-    const char* wifiPassword,
     const char* srvUrl,
     const char* apiKey,
     const char* rdrId,
     const char* fwVersion
-  ) : ssid(wifiSsid), password(wifiPassword), serverUrl(srvUrl),
+  ) : serverUrl(srvUrl),
       readerApiKey(apiKey), readerId(rdrId), firmwareVersion(fwVersion),
       isConnected(false), lastHeartbeat(0), lastReconnectAttempt(0),
       currentBackoff(0), heartbeatPending(false) {}
 
   void begin() {
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);
-    WiFi.persistent(true);
-    connect();
-  }
-
-  void connect() {
-    if (WiFi.status() == WL_CONNECTED) {
-      isConnected = true;
-      currentBackoff = 0;
-      Serial.println("WiFi already connected");
-      return;
-    }
-
-    Serial.printf("Connecting to WiFi: %s\n", ssid);
-    WiFi.begin(ssid, password);
-
-    // Wait for connection with timeout
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-      delay(500);
-      Serial.print(".");
-      attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-      isConnected = true;
-      currentBackoff = 0;
-      Serial.println();
-      Serial.printf("WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
+    // WiFi is already connected by WiFiManager (setupWiFi() in main.cpp)
+    // before this object is created, so just confirm status here.
+    isConnected = (WiFi.status() == WL_CONNECTED);
+    if (isConnected) {
+      Serial.printf("NetworkManager ready. IP: %s\n", WiFi.localIP().toString().c_str());
     } else {
-      isConnected = false;
-      Serial.println();
-      Serial.println("WiFi connection failed!");
-      lastReconnectAttempt = millis();
+      Serial.println("NetworkManager started but WiFi is not connected!");
     }
   }
 
@@ -88,19 +59,9 @@ public:
   }
 
   void update() {
-    // Handle WiFi status
-    if (WiFi.status() != WL_CONNECTED) {
-      isConnected = false;
-
-      // Attempt reconnection periodically
-      if (millis() - lastReconnectAttempt > WIFI_RECONNECT_DELAY) {
-        Serial.println("WiFi lost, attempting reconnect...");
-        connect();
-        lastReconnectAttempt = millis();
-      }
-    } else {
-      isConnected = true;
-    }
+    // WiFi.setAutoReconnect(true) is set by WiFiManager, so the radio
+    // handles reconnects itself; this just tracks status for callers.
+    isConnected = (WiFi.status() == WL_CONNECTED);
   }
 
   bool isWiFiConnected() {
@@ -180,15 +141,23 @@ public:
     doc["reader_api_key"] = readerApiKey;
     doc["timestamp"] = timestamp;
 
-    String body;
-    serializeJson(doc, body);
+String body;
+serializeJson(doc, body);
 
-    Serial.printf("Sending scan: %s at %s\n", uid.c_str(), timestamp.c_str());
+Serial.printf("Sending scan: %s at %s\n", uid.c_str(), timestamp.c_str());
 
-    unsigned long startTime = millis();
-    int httpCode = http.POST(body);
-    String response = http.getString();
-    unsigned long duration = millis() - startTime;
+Serial.println("================================");
+Serial.println("URL:");
+Serial.println(url);
+
+Serial.println("BODY:");
+Serial.println(body);
+Serial.println("================================");
+
+unsigned long startTime = millis();
+int httpCode = http.POST(body);
+String response = http.getString();
+unsigned long duration = millis() - startTime;
 
     Serial.printf("HTTP %d, Response time: %lu ms\n", httpCode, duration);
 
@@ -214,8 +183,9 @@ public:
       http.end();
       return true;
     } else {
-      Serial.printf("Scan failed: HTTP %d\n", httpCode);
-    }
+Serial.printf("Scan failed: HTTP %d\n", httpCode);
+Serial.println("Server response:");
+Serial.println(response);    }
 
     http.end();
 

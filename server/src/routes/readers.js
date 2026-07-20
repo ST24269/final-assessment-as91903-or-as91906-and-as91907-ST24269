@@ -3,7 +3,61 @@ const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
 
-// Apply authentication to all routes
+// POST /api/readers/:id/heartbeat - Reader heartbeat/keepalive.
+// Hardware-authenticated by reader api_key (like attendance.js /scan),
+// so this must stay ABOVE router.use(authenticateUser).
+router.post('/:id/heartbeat', async (req, res) => {
+  try {
+    const { api_key, firmware_version, mac_address, ip_address } = req.body
+
+    // Validate API key
+    const { data: reader, error: readerError } = await supabase
+      .from('readers')
+      .select('*')
+      .eq('id', req.params.id)
+      .eq('api_key', api_key)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (readerError || !reader) {
+      return res.status(401).json({ error: 'Invalid reader credentials' })
+    }
+
+    // Update reader status
+    const { error } = await supabase
+      .from('readers')
+      .update({
+        last_seen: new Date().toISOString(),
+        online_status: 'online',
+        ...(firmware_version && { firmware_version }),
+        ...(mac_address && { mac_address }),
+        ...(ip_address && { ip_address })
+      })
+      .eq('id', req.params.id)
+
+    if (error) throw error
+
+    // Check for pending offline scans to upload
+    const { data: pendingScans } = await supabase
+      .from('offline_scans')
+      .select('*')
+      .eq('reader_id', reader.id)
+      .eq('status', 'pending')
+      .order('scanned_at')
+      .limit(10)
+
+    res.json({
+      success: true,
+      pending_scans_count: pendingScans?.length || 0,
+      pending_scans: pendingScans || []
+    })
+  } catch (error) {
+    console.error('Error in heartbeat:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Apply authentication to all routes below this line
 router.use(authenticateUser)
 
 // Helper to get time ago string

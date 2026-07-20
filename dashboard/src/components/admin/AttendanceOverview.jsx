@@ -160,8 +160,8 @@ export default function AttendanceOverview() {
 
         if (cancelled) return
 
-        setRecords(attendanceResult.data || [])
-        setClasses(classResult.data || [])
+console.log("Attendance data:", attendanceResult.data)
+
         setStudentTotal(studentResult.count ?? null)
       } catch (err) {
         if (!cancelled) {

@@ -8,14 +8,13 @@
 // =======================
 // WIFI CONFIGURATION
 // =======================
-#define WIFI_SSID              "Srini24"
-#define WIFI_PASSWORD          "Soccerish2009"
+// #define WIFI_SSID              "N4L Wi-Fi"
+ // #define WIFI_PASSWORD          "st24269"
 
 // =======================
 // SERVER CONFIGURATION
 // =======================
-#define SERVER_URL             "http://192.168.6.202:3001"  // Your server IP and port
-// =======================
+#define SERVER_URL             "http://192.168.6.202:3001"  // Your server IP and port// =======================
 // READER IDENTITY
 // =======================
 // Generate a unique API key for each reader and register it in the admin panel
