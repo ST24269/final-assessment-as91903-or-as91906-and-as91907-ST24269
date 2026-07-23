@@ -8,13 +8,12 @@ import {
   Clock3,
   Database,
   GraduationCap,
-  Radio,
+  ScanLine,
   ShieldCheck,
   TriangleAlert,
   UsersRound,
 } from 'lucide-react'
 import PublicSiteLayout from '../components/PublicSiteLayout'
-import PixelBlast from '../components/reactbits/PixelBlast'
 import heroImage from '../assets/hero.png'
 
 const benefits = [
@@ -46,7 +45,7 @@ const benefits = [
   {
     title: 'RFID reader integration',
     text: 'ESP32 readers send authenticated scan events to the backend API.',
-    Icon: Radio,
+    Icon: ScanLine,
   },
   {
     title: 'Audit logs',
@@ -118,24 +117,9 @@ export default function PublicHomePage() {
     <PublicSiteLayout>
       <main className="public-main">
         <section className="public-hero" style={{ '--hero-image': `url(${heroImage})` }}>
-          <div className="public-hero-pixels" aria-hidden="true">
-            <PixelBlast
-              variant="square"
-              pixelSize={5}
-              color="#57df9a"
-              patternScale={2.4}
-              patternDensity={1.18}
-              pixelSizeJitter={0.18}
-              enableRipples={false}
-              speed={0.5}
-              edgeFade={0.42}
-              transparent
-            />
-          </div>
-
           <div className="public-hero-copy">
-            <p className="public-kicker">CSC RFID Attendance System</p>
-            <h1>AttendRFID school attendance platform</h1>
+            <p className="public-kicker">Tago attendance system</p>
+            <h1>Tago school attendance platform</h1>
             <p>
               A school attendance system that combines RFID cards, ESP32 room readers,
               Supabase realtime, and role-based dashboards so attendance can be recorded,
@@ -157,7 +141,7 @@ export default function PublicHomePage() {
           </div>
 
           <div className="public-hero-strip" aria-label="System highlights">
-            <span><Radio size={16} strokeWidth={2.2} /> RFID scans</span>
+            <span><ScanLine size={16} strokeWidth={2.2} /> RFID scans</span>
             <span><Activity size={16} strokeWidth={2.2} /> Realtime register</span>
             <span><BarChart3 size={16} strokeWidth={2.2} /> Admin analytics</span>
           </div>
@@ -177,7 +161,7 @@ export default function PublicHomePage() {
               </p>
             </article>
             <article>
-              <h3>What AttendRFID does</h3>
+              <h3>What Tago does</h3>
               <p>
                 The system turns each room scan into a validated attendance record, then
                 presents it through student, teacher, and admin dashboards.

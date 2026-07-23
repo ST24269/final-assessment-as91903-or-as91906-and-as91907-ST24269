@@ -22,14 +22,20 @@ export default function TeacherPage({ session }) {
     if (!activeSession) return
     const channel = supabase
       .channel('attendance-changes')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'attendance',
-      }, (payload) => {
-        if (payload.new.session_id !== activeSession.id) return
-        setAttendance((prev) => [...prev, payload.new])
-      })
+.on(
+  'postgres_changes',
+  {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'attendance',
+  },
+  async (payload) => {
+    if (payload.new.session_id !== activeSession.id) return
+
+    const data = await api.get(`/api/attendance/session/${activeSession.id}`)
+    setAttendance(Array.isArray(data) ? data : [])
+  }
+)
       .subscribe()
     return () => supabase.removeChannel(channel)
   }, [activeSession])

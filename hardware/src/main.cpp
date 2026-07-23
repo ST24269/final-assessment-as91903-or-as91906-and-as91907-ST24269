@@ -206,12 +206,8 @@ void loop() {
   lastUID = uidString;
   lastScanTime = now;
 
-  // Generate timestamp
-  char timestamp[32];
-  snprintf(timestamp, sizeof(timestamp), "%lu", now / 1000);
-
-  // Process the scan
-  processScan(uidString, timestamp);
+// Process the scan (server will timestamp it)
+processScan(uidString, "");
 
   rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();

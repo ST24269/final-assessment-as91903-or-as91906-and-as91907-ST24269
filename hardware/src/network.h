@@ -137,9 +137,11 @@ public:
     http.setTimeout(10000);
 
     StaticJsonDocument<256> doc;
-    doc["rfid_card_uid"] = uid;
-    doc["reader_api_key"] = readerApiKey;
+doc["rfid_card_uid"] = uid;
+doc["reader_api_key"] = readerApiKey;
+if (timestamp.length() > 0) {
     doc["timestamp"] = timestamp;
+}
 
 String body;
 serializeJson(doc, body);

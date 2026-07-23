@@ -48,6 +48,7 @@ async function getSessionAccess(req, sessionId) {
 // Called by ESP32 when a card is tapped. This route is hardware-authenticated by reader API key.
 // Accepts optional timestamp for offline support.
 router.post('/scan', async (req, res) => {
+  console.log(">>> /api/attendance/scan HIT");
   const startTime = Date.now()
   const { rfid_card_uid, reader_api_key, timestamp, reader_id } = req.body
   const normalizedUid = rfid_card_uid ? normalizeCardUid(rfid_card_uid) : ''
@@ -58,8 +59,15 @@ router.post('/scan', async (req, res) => {
   }
 
   // Parse timestamp - use provided or current time
-  const scannedAt = timestamp ? new Date(timestamp) : new Date()
+let scannedAt = new Date()
 
+if (timestamp) {
+  const parsed = new Date(timestamp)
+
+  if (!isNaN(parsed.getTime())) {
+    scannedAt = parsed
+  }
+}
   // Validate reader
   const { data: reader, error: readerError } = await supabase
     .from('readers')

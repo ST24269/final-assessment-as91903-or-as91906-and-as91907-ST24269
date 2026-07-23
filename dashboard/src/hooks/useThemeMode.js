@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 
-const THEME_KEY = 'attendrfid-theme'
+const THEME_KEY = 'tago-theme'
 
 function getStoredTheme() {
-  if (typeof window === 'undefined') return 'dark'
-  return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'
+  if (typeof window === 'undefined') return 'light'
+
+  try {
+    return window.localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
 }
 
 function applyTheme(theme) {
@@ -40,8 +45,8 @@ function animateThemeChange(theme, origin) {
         ],
       },
       {
-        duration: 500,
-        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        duration: 240,
+        easing: 'ease-out',
         pseudoElement: '::view-transition-new(root)',
       },
     )
@@ -53,7 +58,12 @@ export default function useThemeMode() {
 
   useEffect(() => {
     applyTheme(theme)
-    window.localStorage.setItem(THEME_KEY, theme)
+
+    try {
+      window.localStorage.setItem(THEME_KEY, theme)
+    } catch {
+      // Theme still applies for this page load even when storage is blocked.
+    }
   }, [theme])
 
   const toggleTheme = () => {

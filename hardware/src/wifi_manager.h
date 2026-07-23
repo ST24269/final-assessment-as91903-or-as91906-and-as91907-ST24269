@@ -35,7 +35,7 @@ inline void setupWiFi() {
     Serial.println("========================================");
   });
 
-  bool connected = wm.autoConnect("Attendify_Setup");
+  bool connected = wm.autoConnect("Tago_Setup");
 
   if (!connected) {
     Serial.println("Failed to connect within timeout, restarting...");
