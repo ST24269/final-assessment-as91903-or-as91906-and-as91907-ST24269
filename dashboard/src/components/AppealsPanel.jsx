@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, RefreshCw } from 'lucide-react'
+import { CheckCircle2, RefreshCw, Search } from 'lucide-react'
 import { api, supabase } from '../api/client'
 import Card from './Card'
 
@@ -100,6 +100,36 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
     [...new Set(appeals.map((appeal) => appeal.student?.kainga).filter(Boolean))].sort()
   ), [appeals])
 
+  // Teacher mode has no server-side filters, so class options and matching
+  // are derived from the teacher's own appeals instead of a school-wide list.
+  const teacherClassOptions = useMemo(() => {
+    const seen = new Map()
+    appeals.forEach((appeal) => {
+      if (appeal.class?.id && !seen.has(appeal.class.id)) {
+        seen.set(appeal.class.id, appeal.class)
+      }
+    })
+    return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [appeals])
+
+  const visibleAppeals = useMemo(() => {
+    if (mode !== 'teacher') return appeals
+
+    return appeals.filter((appeal) => {
+      const statusMatches = filters.status === 'all' || appeal.status === filters.status
+      const classMatches = filters.class_id === 'all' || appeal.class?.id === filters.class_id
+      const search = filters.student.trim().toLowerCase()
+      const studentMatches = !search || (appeal.student?.full_name || '').toLowerCase().includes(search)
+        || (appeal.student?.student_number || '').toLowerCase().includes(search)
+      return statusMatches && classMatches && studentMatches
+    })
+  }, [appeals, filters, mode])
+
+  const pendingCount = useMemo(
+    () => appeals.filter((appeal) => appeal.status === 'pending').length,
+    [appeals],
+  )
+
   const updateAppeal = async (appeal, status) => {
     const draft = drafts[appeal.id] || {}
     setUpdatingId(appeal.id)
@@ -124,6 +154,48 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
 
   const content = (
     <div className="appeals-panel">
+      {!loading && appeals.length > 0 && (
+        <div className="appeals-summary-row">
+          <span className={`appeals-summary-pill ${pendingCount > 0 ? 'is-attention' : ''}`}>
+            {pendingCount} pending
+          </span>
+          <span className="appeals-summary-pill">{appeals.length} total</span>
+        </div>
+      )}
+
+      {mode === 'teacher' && appeals.length > 0 && (
+        <div className="appeals-filter-row">
+          <div className="appeals-search-field">
+            <Search size={14} strokeWidth={2.2} />
+            <input
+              value={filters.student}
+              onChange={(event) => setFilters((current) => ({ ...current, student: event.target.value }))}
+              placeholder="Search by student name or ID"
+            />
+          </div>
+          <select
+            className="session-select"
+            value={filters.status}
+            onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+          >
+            <option value="all">All statuses</option>
+            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+          {teacherClassOptions.length > 1 && (
+            <select
+              className="session-select"
+              value={filters.class_id}
+              onChange={(event) => setFilters((current) => ({ ...current, class_id: event.target.value }))}
+            >
+              <option value="all">All classes</option>
+              {teacherClassOptions.map((classItem) => (
+                <option key={classItem.id} value={classItem.id}>{classItem.name} - {classItem.subject}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
       {mode === 'admin' && (
         <div className="appeals-filter-row">
           <input
@@ -183,14 +255,18 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
 
       {loading ? (
         <p className="empty-state">Loading appeals...</p>
-      ) : appeals.length === 0 ? (
+      ) : visibleAppeals.length === 0 ? (
         <div className="portal-empty">
           <strong>No appeals to show</strong>
-          <span>{mode === 'admin' ? 'No appeals match these filters.' : 'Appeals for your classes or LA group will appear here.'}</span>
+          <span>
+            {appeals.length > 0
+              ? 'No appeals match your search or filters.'
+              : (mode === 'admin' ? 'No appeals match these filters.' : 'Appeals for your classes or LA group will appear here.')}
+          </span>
         </div>
       ) : (
         <div className="appeals-list">
-          {appeals.map((appeal) => {
+          {visibleAppeals.map((appeal) => {
             const draft = drafts[appeal.id] || {}
             return (
               <article key={appeal.id} className="appeal-review-card">

@@ -854,6 +854,29 @@ router.patch('/manage/:id/rfid', requireRole('admin'), async (req, res) => {
   res.json({ student, message: description })
 })
 
+router.patch('/manage/:id/photo', requireRole('admin'), async (req, res) => {
+  const photoUrl = String(req.body.photo_url || '').trim()
+  if (!photoUrl) return res.status(400).json({ error: 'photo_url is required.' })
+
+  const current = await getEnrichedStudent(req.params.id).catch(() => null)
+  if (!current) return res.status(404).json({ error: 'Student not found' })
+
+  const { error } = await supabase
+    .from('students')
+    .update({
+      photo_url: photoUrl,
+      photo_updated_at: new Date().toISOString(),
+      photo_updated_by: req.profile.id,
+    })
+    .eq('id', req.params.id)
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  await logAudit(req, 'student_photo_updated', req.params.id, `Updated photo for ${current.full_name}`)
+  const student = await getEnrichedStudent(req.params.id)
+  res.json({ student, message: 'Photo updated.' })
+})
+
 router.patch('/manage/:id/status', requireRole('admin'), async (req, res) => {
   const status = req.body.account_status || 'inactive'
   if (!VALID_ACCOUNT_STATUSES.includes(status)) {

@@ -114,7 +114,32 @@ export default function AttendanceOverview() {
   const [timeRange, setTimeRange] = useState('30d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+const [resolvingId, setResolvingId] = useState(null)
 
+  const resolveFlag = async (record, decision) => {
+    setResolvingId(record.id)
+
+    const { data: { user } } = await supabase.auth.getUser()
+
+    await supabase
+      .from('attendance')
+      .update({ flagged: false, flag_reason: null })
+      .eq('id', record.id)
+
+    await supabase.from('audit_logs').insert({
+      action: decision === 'confirmed_fraud' ? 'flag_confirmed_fraud' : 'flag_dismissed',
+      actor_profile_id: user?.id || null,
+      actor_email: user?.email || null,
+      target_student_id: record.student_id,
+      description: `Photo mismatch flag ${decision}`,
+      metadata: { attendance_id: record.id, session_id: record.session_id },
+    })
+
+    setRecords((current) => current.map((item) => (
+      item.id === record.id ? { ...item, flagged: false, flag_reason: null } : item
+    )))
+    setResolvingId(null)
+  }
   useEffect(() => {
     let cancelled = false
 
@@ -159,8 +184,6 @@ export default function AttendanceOverview() {
         }
 
         if (cancelled) return
-
-console.log("Attendance data:", attendanceResult.data)
 setRecords(attendanceResult.data || [])
 setClasses(classResult.data || [])
         setStudentTotal(studentResult.count ?? null)
@@ -459,7 +482,7 @@ setClasses(classResult.data || [])
                 <span className="analytics-pill">{summary.flagged} flags</span>
               </div>
 
-              {flaggedRecords.length === 0 ? (
+{flaggedRecords.length === 0 ? (
                 <div className="portal-empty">
                   <strong>No flagged records</strong>
                   <span>There are no flagged attendance records in this view.</span>
@@ -474,6 +497,24 @@ setClasses(classResult.data || [])
                       </span>
                       <strong>{getStudentName(record)}</strong>
                       <span>{getClassName(record)} - {formatDateTime(record.scanned_at)}</span>
+                      <div className="analytics-flag-actions">
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => resolveFlag(record, 'dismissed')}
+                          disabled={resolvingId === record.id}
+                        >
+                          Dismiss
+                        </button>
+                        <button
+                          type="button"
+                          className="account-danger-button"
+                          onClick={() => resolveFlag(record, 'confirmed_fraud')}
+                          disabled={resolvingId === record.id}
+                        >
+                          Confirm fraud
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

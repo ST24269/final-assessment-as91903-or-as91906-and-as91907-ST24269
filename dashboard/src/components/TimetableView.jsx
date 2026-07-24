@@ -7,9 +7,9 @@ const DAYS = [
   { value: 3, short: 'Wed', label: 'Wednesday' },
   { value: 4, short: 'Thu', label: 'Thursday' },
   { value: 5, short: 'Fri', label: 'Friday' },
-  { value: 6, short: 'Sat', label: 'Saturday' },
-  { value: 7, short: 'Sun', label: 'Sunday' },
 ]
+
+
 
 function dayOfWeekFor(date = new Date()) {
   const day = date.getDay()

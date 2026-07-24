@@ -4,13 +4,11 @@
  * All configuration constants for the ESP32 reader.
  * Edit this file to configure your reader.
  */
-
 // =======================
 // WIFI CONFIGURATION
 // =======================
 // #define WIFI_SSID              "N4L Wi-Fi"
  // #define WIFI_PASSWORD          "st24269"
-
 // =======================
 // SERVER CONFIGURATION
 // =======================

@@ -119,7 +119,7 @@ function ActionNotice({ notice }) {
   )
 }
 
-function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, saving }) {
+function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, saving, student, onUploadPhoto, photoUploading, photoNotice }) {
   const isEdit = mode === 'edit'
 
   return (
@@ -181,6 +181,32 @@ function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, sa
             <div className="login-field">
               <label htmlFor="student-rfid">RFID card ID</label>
               <input id="student-rfid" value={form.rfid_card_uid} onChange={(event) => setForm((current) => ({ ...current, rfid_card_uid: event.target.value }))} placeholder="Optional" />
+            </div>
+          )}
+
+          {isEdit && (
+            <div className="login-field student-form-wide">
+              <label htmlFor="student-photo">Student photo</label>
+              {student?.photo_url && (
+                <img src={student.photo_url} alt="" className="student-photo-preview" />
+              )}
+              <input
+                id="student-photo"
+                type="file"
+                accept="image/*"
+                disabled={photoUploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) onUploadPhoto(student, file)
+                  event.target.value = ''
+                }}
+              />
+              {photoUploading && <span className="student-table-sub">Uploading...</span>}
+              {photoNotice && (
+                <span className={photoNotice.type === 'error' ? 'is-error' : 'is-success'}>
+                  {photoNotice.text}
+                </span>
+              )}
             </div>
           )}
 
@@ -318,6 +344,43 @@ export default function StudentsManager() {
   const [rfidModal, setRfidModal] = useState(null)
   const [rfidForm, setRfidForm] = useState({ action: 'assign', rfid_card_uid: '' })
   const [confirmModal, setConfirmModal] = useState(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoNotice, setPhotoNotice] = useState(null)
+
+  const uploadStudentPhoto = async (student, file) => {
+    setPhotoUploading(true)
+    setPhotoNotice(null)
+
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${student.id}/${Date.now()}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('student-photos')
+        .upload(path, file, { upsert: true, contentType: file.type })
+
+      if (uploadError) throw new Error(uploadError.message)
+
+      const { data: signedData, error: signError } = await supabase.storage
+        .from('student-photos')
+        .createSignedUrl(path, 60 * 60 * 24 * 365 * 10)
+
+      if (signError) throw new Error(signError.message)
+
+      const data = await api.patch(`/api/students/manage/${student.id}/photo`, {
+        photo_url: signedData.signedUrl,
+      })
+
+      if (data?.error) throw new Error(data.error)
+
+      replaceStudent(data.student)
+      setPhotoNotice({ type: 'success', text: 'Photo updated.' })
+    } catch (error) {
+      setPhotoNotice({ type: 'error', text: error.message })
+    } finally {
+      setPhotoUploading(false)
+    }
+  }
   const [emailForm, setEmailForm] = useState({ recipientMode: 'visible', subject: '', message: '' })
   const [emailNotice, setEmailNotice] = useState(null)
   const [emailSending, setEmailSending] = useState(false)
@@ -1032,7 +1095,7 @@ export default function StudentsManager() {
         )}
       </section>
 
-      {formModal && (
+{formModal && (
         <StudentFormModal
           mode={formModal.mode}
           form={form}
@@ -1041,6 +1104,10 @@ export default function StudentsManager() {
           onClose={() => setFormModal(null)}
           onSubmit={submitStudentForm}
           saving={saving}
+          student={formModal.student}
+          onUploadPhoto={uploadStudentPhoto}
+          photoUploading={photoUploading}
+          photoNotice={photoNotice}
         />
       )}
 

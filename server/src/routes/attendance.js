@@ -379,11 +379,11 @@ router.get('/session/:session_id', requireRole('teacher', 'admin'), async (req, 
     return res.status(access.status).json({ error: access.error })
   }
 
-  const { data, error } = await supabase
+const { data, error } = await supabase
     .from('attendance')
     .select(`
       *,
-      students(full_name, student_number, year_level)
+      students(full_name, student_number, year_level, photo_url)
     `)
     .eq('session_id', req.params.session_id)
     .order('scanned_at')
@@ -409,11 +409,11 @@ router.get('/:id', requireRole('teacher', 'admin'), async (req, res) => {
     return res.status(access.status).json({ error: access.error })
   }
 
-  const { data, error } = await supabase
+const { data, error } = await supabase
     .from('attendance')
     .select(`
       *,
-      students(full_name, student_number, year_level)
+      students(full_name, student_number, year_level, photo_url)
     `)
     .eq('id', req.params.id)
     .single()
@@ -455,6 +455,34 @@ router.patch('/:id', requireRole('teacher', 'admin'), async (req, res) => {
   if (error) return res.status(500).json({ error: error.message })
   res.json(data)
 })
+router.patch('/:id/flag', requireRole('teacher', 'admin'), async (req, res) => {
+  const { data: existing, error: existingError } = await supabase
+    .from('attendance')
+    .select('id, session_id')
+    .eq('id', req.params.id)
+    .single()
+
+  if (existingError || !existing) {
+    return res.status(404).json({ error: 'Attendance record not found' })
+  }
+
+  const access = await getSessionAccess(req, existing.session_id)
+
+  if (!access.allowed) {
+    return res.status(access.status).json({ error: access.error })
+  }
+
+  const { data, error } = await supabase
+    .from('attendance')
+    .update({ flagged: true, flag_reason: req.body.reason || 'photo_mismatch' })
+    .eq('id', req.params.id)
+    .select()
+    .single()
+  
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data)
+})
+
 const { sendEmail } = require('../utils/email')
 const { importStudentTimetable } = require('./onboarding') // exported helper, see onboarding.js
 

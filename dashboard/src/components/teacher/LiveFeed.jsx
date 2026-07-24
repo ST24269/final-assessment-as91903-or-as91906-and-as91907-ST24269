@@ -4,7 +4,7 @@ function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
 }
 
-export default function LiveFeed({ events = [] }) {
+export default function LiveFeed({ events = [], onFlag }) {
   return (
     <Card title="Recent scans">
       {events.length === 0 ? (
@@ -19,6 +19,11 @@ export default function LiveFeed({ events = [] }) {
               key={event.id}
               className={`live-feed-row ${event.flagged ? 'is-flagged' : 'is-ok'}`}
             >
+              <img
+                src={event.students?.photo_url || '/default-avatar.png'}
+                alt=""
+                className="live-feed-avatar"
+              />
               <div>
                 <p>
                   {event.students?.full_name || 'Unknown student'}
@@ -30,6 +35,15 @@ export default function LiveFeed({ events = [] }) {
               <span>
                 {formatTime(event.scanned_at)}
               </span>
+              {!event.flagged && onFlag && (
+                <button
+                  type="button"
+                  className="live-feed-flag-btn"
+                  onClick={() => onFlag(event.id)}
+                >
+                  Doesn't match
+                </button>
+              )}
             </div>
           ))}
         </div>
