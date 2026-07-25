@@ -73,6 +73,7 @@ app.use('/api/appeals', require('./routes/appeals'))
 app.use('/api/timetable', require('./routes/timetable'))
 app.use('/api/readers', require('./routes/readers'))
 app.use('/api/onboarding', require('./routes/onboarding'))
+app.use('/api/errors', require('./routes/errors'))
 
 app.use(notFoundHandler)
 app.use(errorHandler)

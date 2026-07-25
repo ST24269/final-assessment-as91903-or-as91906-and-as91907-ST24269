@@ -44,3 +44,7 @@
 // STORAGE CONFIGURATION
 // =======================
 #define MAX_CACHED_SCANS       100         // Max offline scans to store
+// =======================
+// BUZZER CONFIGURATION
+// =======================
+#define BUZZER_PIN              4          // Active buzzer signal pin

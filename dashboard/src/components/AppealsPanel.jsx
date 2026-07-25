@@ -17,7 +17,7 @@ function statusTone(status) {
   return 'status-late'
 }
 
-export default function AppealsPanel({ mode = 'teacher', compact = false }) {
+export default function AppealsPanel({ mode = 'teacher', compact = false, hideResolved = false }) {
   const [appeals, setAppeals] = useState([])
   const [teachers, setTeachers] = useState([])
   const [classes, setClasses] = useState([])
@@ -96,26 +96,34 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
+  // Resolved appeals are done and dusted - the compact dashboard widget hides
+  // them, while the dedicated appeals page (hideResolved=false) keeps showing
+  // the full history.
+  const scopedAppeals = useMemo(
+    () => (hideResolved ? appeals.filter((appeal) => appeal.status !== 'resolved') : appeals),
+    [appeals, hideResolved],
+  )
+
   const kaingaOptions = useMemo(() => (
-    [...new Set(appeals.map((appeal) => appeal.student?.kainga).filter(Boolean))].sort()
-  ), [appeals])
+    [...new Set(scopedAppeals.map((appeal) => appeal.student?.kainga).filter(Boolean))].sort()
+  ), [scopedAppeals])
 
   // Teacher mode has no server-side filters, so class options and matching
   // are derived from the teacher's own appeals instead of a school-wide list.
   const teacherClassOptions = useMemo(() => {
     const seen = new Map()
-    appeals.forEach((appeal) => {
+    scopedAppeals.forEach((appeal) => {
       if (appeal.class?.id && !seen.has(appeal.class.id)) {
         seen.set(appeal.class.id, appeal.class)
       }
     })
     return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  }, [appeals])
+  }, [scopedAppeals])
 
   const visibleAppeals = useMemo(() => {
-    if (mode !== 'teacher') return appeals
+    if (mode !== 'teacher') return scopedAppeals
 
-    return appeals.filter((appeal) => {
+    return scopedAppeals.filter((appeal) => {
       const statusMatches = filters.status === 'all' || appeal.status === filters.status
       const classMatches = filters.class_id === 'all' || appeal.class?.id === filters.class_id
       const search = filters.student.trim().toLowerCase()
@@ -123,11 +131,11 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
         || (appeal.student?.student_number || '').toLowerCase().includes(search)
       return statusMatches && classMatches && studentMatches
     })
-  }, [appeals, filters, mode])
+  }, [scopedAppeals, filters, mode])
 
   const pendingCount = useMemo(
-    () => appeals.filter((appeal) => appeal.status === 'pending').length,
-    [appeals],
+    () => scopedAppeals.filter((appeal) => appeal.status === 'pending').length,
+    [scopedAppeals],
   )
 
   const updateAppeal = async (appeal, status) => {
@@ -154,16 +162,16 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
 
   const content = (
     <div className="appeals-panel">
-      {!loading && appeals.length > 0 && (
+      {!loading && scopedAppeals.length > 0 && (
         <div className="appeals-summary-row">
           <span className={`appeals-summary-pill ${pendingCount > 0 ? 'is-attention' : ''}`}>
             {pendingCount} pending
           </span>
-          <span className="appeals-summary-pill">{appeals.length} total</span>
+          <span className="appeals-summary-pill">{scopedAppeals.length} total</span>
         </div>
       )}
 
-      {mode === 'teacher' && appeals.length > 0 && (
+      {mode === 'teacher' && scopedAppeals.length > 0 && (
         <div className="appeals-filter-row">
           <div className="appeals-search-field">
             <Search size={14} strokeWidth={2.2} />
@@ -259,9 +267,9 @@ export default function AppealsPanel({ mode = 'teacher', compact = false }) {
         <div className="portal-empty">
           <strong>No appeals to show</strong>
           <span>
-            {appeals.length > 0
+            {scopedAppeals.length > 0
               ? 'No appeals match your search or filters.'
-              : (mode === 'admin' ? 'No appeals match these filters.' : 'Appeals for your classes or LA group will appear here.')}
+              : (mode === 'admin' ? 'No appeals match these filters.' : (hideResolved ? 'No open appeals right now.' : 'Appeals for your classes or LA group will appear here.'))}
           </span>
         </div>
       ) : (

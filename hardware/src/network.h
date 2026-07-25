@@ -1,10 +1,6 @@
 /*
  * Tago RFID Reader - Network Module
  * ==================================
- * Handles HTTP requests with exponential backoff.
- * NOTE: WiFi connection itself is handled by WiFiManager (see wifi_manager.h),
- * which runs before this class is constructed. This class assumes WiFi is
- * already connected and just monitors/uses it.
  */
 
 #ifndef NETWORK_H
@@ -17,19 +13,36 @@
 #include "config.h"
 #include "storage.h"
 
+enum class ScanResult {
+  SUCCESS,        // attendance marked
+  DUPLICATE,      // already recorded (HTTP 409) - treated as success
+  NO_SESSION,     // no active session for this room - retrying won't help
+  UNKNOWN_CARD,   // card not recognised / rejected by server - retrying won't help
+  NETWORK_ERROR   // couldn't reach server / timeout - worth caching + retrying
+};
+
 class NetworkManager {
 private:
   bool isConnected;
   unsigned long lastHeartbeat;
-  unsigned long lastReconnectAttempt;
   uint8_t currentBackoff;
   bool heartbeatPending;
 
-  // Configuration
+  unsigned long lastUploadAttempt;
+  unsigned long uploadRetryIntervalMs;
+
   const char* serverUrl;
   const char* readerApiKey;
   const char* readerId;
   const char* firmwareVersion;
+
+  // Decide whether a server error message is about the session being
+  // inactive vs. the card itself being unrecognised.
+  bool errorMentionsSession(const String& errMsg) {
+    String lower = errMsg;
+    lower.toLowerCase();
+    return lower.indexOf("session") != -1;
+  }
 
 public:
   NetworkManager(
@@ -39,12 +52,11 @@ public:
     const char* fwVersion
   ) : serverUrl(srvUrl),
       readerApiKey(apiKey), readerId(rdrId), firmwareVersion(fwVersion),
-      isConnected(false), lastHeartbeat(0), lastReconnectAttempt(0),
-      currentBackoff(0), heartbeatPending(false) {}
+      isConnected(false), lastHeartbeat(0),
+      currentBackoff(0), heartbeatPending(false),
+      lastUploadAttempt(0), uploadRetryIntervalMs(8000) {}
 
   void begin() {
-    // WiFi is already connected by WiFiManager (setupWiFi() in main.cpp)
-    // before this object is created, so just confirm status here.
     isConnected = (WiFi.status() == WL_CONNECTED);
     if (isConnected) {
       Serial.printf("NetworkManager ready. IP: %s\n", WiFi.localIP().toString().c_str());
@@ -59,8 +71,6 @@ public:
   }
 
   void update() {
-    // WiFi.setAutoReconnect(true) is set by WiFiManager, so the radio
-    // handles reconnects itself; this just tracks status for callers.
     isConnected = (WiFi.status() == WL_CONNECTED);
   }
 
@@ -68,7 +78,6 @@ public:
     return WiFi.status() == WL_CONNECTED;
   }
 
-  // Send heartbeat to server
   bool sendHeartbeat() {
     if (!isWiFiConnected()) {
       heartbeatPending = true;
@@ -98,18 +107,6 @@ public:
       Serial.println("Heartbeat sent successfully");
       lastHeartbeat = millis();
       heartbeatPending = false;
-
-      // Check if there are pending scans to upload
-      StaticJsonDocument<512> respDoc;
-      deserializeJson(respDoc, response);
-
-      if (respDoc["pending_scans_count"].is<int>()) {
-        int pendingCount = respDoc["pending_scans_count"].as<int>();
-        if (pendingCount > 0) {
-          Serial.printf("Server indicates %d pending scans to upload\n", pendingCount);
-        }
-      }
-
       return true;
     }
 
@@ -117,16 +114,17 @@ public:
     return false;
   }
 
-  // Check if heartbeat is needed
   bool needsHeartbeat(unsigned long intervalMs) {
     return (millis() - lastHeartbeat) > intervalMs;
   }
 
-  // Send a single scan to server with exponential backoff
-  bool sendScan(const String& uid, const String& timestamp, bool isRetry = false) {
+  // Sends a single scan and classifies exactly why it failed, so
+  // main.cpp can play the correct, unambiguous buzzer tone and decide
+  // whether caching it is even worthwhile.
+  ScanResult sendScan(const String& uid, const String& timestamp) {
     if (!isWiFiConnected()) {
       Serial.println("WiFi not connected, cannot send scan");
-      return false;
+      return ScanResult::NETWORK_ERROR;
     }
 
     HTTPClient http;
@@ -137,75 +135,74 @@ public:
     http.setTimeout(10000);
 
     StaticJsonDocument<256> doc;
-doc["rfid_card_uid"] = uid;
-doc["reader_api_key"] = readerApiKey;
-if (timestamp.length() > 0) {
-    doc["timestamp"] = timestamp;
-}
+    doc["rfid_card_uid"] = uid;
+    doc["reader_api_key"] = readerApiKey;
+    if (timestamp.length() > 0) {
+      doc["timestamp"] = timestamp;
+    }
 
-String body;
-serializeJson(doc, body);
+    String body;
+    serializeJson(doc, body);
 
-Serial.printf("Sending scan: %s at %s\n", uid.c_str(), timestamp.c_str());
+    Serial.printf("Sending scan: %s at %s\n", uid.c_str(), timestamp.c_str());
 
-Serial.println("================================");
-Serial.println("URL:");
-Serial.println(url);
+    int httpCode = http.POST(body);
+    String response = http.getString();
+    http.end();
 
-Serial.println("BODY:");
-Serial.println(body);
-Serial.println("================================");
+    Serial.printf("HTTP %d - %s\n", httpCode, response.c_str());
 
-unsigned long startTime = millis();
-int httpCode = http.POST(body);
-String response = http.getString();
-unsigned long duration = millis() - startTime;
-
-    Serial.printf("HTTP %d, Response time: %lu ms\n", httpCode, duration);
-
-    if (httpCode == 201 || httpCode == 200) {
+    if (httpCode == 200 || httpCode == 201) {
       StaticJsonDocument<512> respDoc;
       deserializeJson(respDoc, response);
 
       if (respDoc["success"] == true) {
         Serial.println(">>> ATTENDANCE MARKED <<<");
-        Serial.printf("Student: %s, Status: %s\n",
-          respDoc["student"].as<String>().c_str(),
-          respDoc["status"].as<String>().c_str());
-        currentBackoff = 0;  // Reset backoff on success
-        http.end();
-        return true;
-      } else {
-        Serial.printf("Server rejected: %s\n", respDoc["error"].as<String>().c_str());
+        currentBackoff = 0;
+        return ScanResult::SUCCESS;
       }
-    } else if (httpCode == 409) {
-      // Duplicate - not an error
-      Serial.println("Scan already recorded");
-      currentBackoff = 0;
-      http.end();
-      return true;
-    } else {
-Serial.printf("Scan failed: HTTP %d\n", httpCode);
-Serial.println("Server response:");
-Serial.println(response);    }
 
-    http.end();
-
-    // Implement exponential backoff
-    if (currentBackoff == 0) {
-      currentBackoff = 1000;
-    } else {
-      currentBackoff = min(currentBackoff * 2, 60000);
+      String errMsg = respDoc["error"].as<String>();
+      Serial.printf("Server rejected: %s\n", errMsg.c_str());
+      return errorMentionsSession(errMsg) ? ScanResult::NO_SESSION : ScanResult::UNKNOWN_CARD;
     }
 
-    return false;
+    if (httpCode == 409) {
+      Serial.println("Scan already recorded");
+      currentBackoff = 0;
+      return ScanResult::DUPLICATE;
+    }
+
+    if (httpCode == 400 || httpCode == 403 || httpCode == 404 || httpCode == 422) {
+      // Any of these client-error codes mean the server actively looked
+      // at the request and said no - figure out whether it's a session
+      // problem or a card problem from the message text.
+      StaticJsonDocument<512> respDoc;
+      deserializeJson(respDoc, response);
+      String errMsg = respDoc["error"].as<String>();
+      return errorMentionsSession(errMsg) ? ScanResult::NO_SESSION : ScanResult::UNKNOWN_CARD;
+    }
+
+    // Anything else (5xx, 0, timeout) is a genuine network/server fault,
+    // worth retrying.
+    if (currentBackoff == 0) {
+      currentBackoff = 1;
+    } else {
+      currentBackoff = min((int)currentBackoff * 2, 60);
+    }
+    return ScanResult::NETWORK_ERROR;
   }
 
-  // Upload cached scans in bulk
+  bool canRetryUploadNow() {
+    return (millis() - lastUploadAttempt) >= uploadRetryIntervalMs;
+  }
+
   bool uploadCachedScans(OfflineStorage& storage) {
     if (!isWiFiConnected()) {
       return false;
     }
+
+    lastUploadAttempt = millis();
 
     DynamicJsonDocument scansDoc = storage.getPendingScans();
     JsonArray scans = scansDoc.as<JsonArray>();
@@ -221,7 +218,7 @@ Serial.println(response);    }
 
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
-    http.setTimeout(30000);
+    http.setTimeout(15000);
 
     StaticJsonDocument<4096> doc;
     doc["reader_id"] = readerId;
@@ -248,7 +245,6 @@ Serial.println(response);    }
       int successCount = respDoc["success_count"].as<int>();
       Serial.printf("Bulk upload: %d/%d successful\n", successCount, scans.size());
 
-      // Remove successfully uploaded scans
       if (respDoc["results"].is<JsonArray>()) {
         JsonArray results = respDoc["results"].as<JsonArray>();
         int i = 0;
@@ -256,46 +252,26 @@ Serial.println(response);    }
           if (i < results.size()) {
             String status = results[i]["status"].as<String>();
             if (status == "success" || status == "skipped") {
-              storage.markUploaded(
-                scan["rfid_card_uid"].as<String>(),
-                scan["scanned_at"].as<String>()
-              );
+              storage.markUploaded(scan["rfid_card_uid"].as<String>(), scan["scanned_at"].as<String>());
             } else {
-              storage.incrementAttempts(
-                scan["rfid_card_uid"].as<String>(),
-                scan["scanned_at"].as<String>()
-              );
+              storage.incrementAttempts(scan["rfid_card_uid"].as<String>(), scan["scanned_at"].as<String>());
             }
           }
           i++;
         }
       }
 
-      // Clean up scans that failed too many times
       storage.cleanupFailedScans(5);
-
       return true;
     }
 
-    Serial.printf("Bulk upload failed: HTTP %d\n", httpCode);
-    Serial.printf("Server response: %s\n", response.c_str());
+    Serial.printf("Bulk upload failed: HTTP %d - %s\n", httpCode, response.c_str());
     return false;
   }
 
-  // Get current backoff delay
-  unsigned long getBackoffDelay() {
-    return currentBackoff;
-  }
-
-  // Check if there's a pending heartbeat
-  bool hasPendingHeartbeat() {
-    return heartbeatPending;
-  }
-
-  // Get WiFi signal strength
-  int getSignalStrength() {
-    return WiFi.RSSI();
-  }
+  unsigned long getBackoffDelay() { return currentBackoff; }
+  bool hasPendingHeartbeat() { return heartbeatPending; }
+  int getSignalStrength() { return WiFi.RSSI(); }
 };
 
 #endif // NETWORK_H

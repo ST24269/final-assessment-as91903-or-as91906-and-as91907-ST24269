@@ -5,8 +5,10 @@ const { authenticateUser, requireRole } = require('../middleware/auth')
 
 const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 
-// Helper to log scan results
-async function logScan(readerId, rfidCardUid, scannedAt, result, processingTimeMs, errorMessage = null) {
+// Helper to log scan results. `extra` can carry student_id/class_id/session_id
+// so teacher-facing error notifications (wrong class, unrecognised card) have
+// enough context to display something useful without another round trip.
+async function logScan(readerId, rfidCardUid, scannedAt, result, processingTimeMs, errorMessage = null, extra = {}) {
   try {
     await supabase.from('scan_logs').insert([{
       reader_id: readerId,
@@ -14,7 +16,10 @@ async function logScan(readerId, rfidCardUid, scannedAt, result, processingTimeM
       scanned_at: scannedAt,
       result,
       processing_time_ms: processingTimeMs,
-      error_message: errorMessage
+      error_message: errorMessage,
+      student_id: extra.studentId || null,
+      class_id: extra.classId || null,
+      session_id: extra.sessionId || null,
     }])
 
     // Update reader's last_scan
@@ -25,6 +30,23 @@ async function logScan(readerId, rfidCardUid, scannedAt, result, processingTimeM
   } catch (error) {
     console.error('Error logging scan:', error)
   }
+}
+
+// Finds the currently-open session for a room (if any), used both for the
+// main scan flow and to attach best-effort class context to error logs.
+async function findActiveSessionForRoom(room) {
+  if (!room) return null
+
+  const { data } = await supabase
+    .from('sessions')
+    .select('*, classes!inner(id, name, room)')
+    .eq('classes.room', room)
+    .is('ended_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return data || null
 }
 
 async function getSessionAccess(req, sessionId) {
@@ -116,21 +138,21 @@ if (timestamp) {
     .maybeSingle()
 
   if (studentError || !student) {
-    await logScan(reader.id, normalizedUid, scannedAt, 'invalid_card', Date.now() - startTime, 'Card not registered')
+    // Best-effort: if a session happens to be open in this room, attach it so
+    // the teacher on duty sees the unrecognised-card tap on their dashboard.
+    const sessionForRoom = await findActiveSessionForRoom(reader.room)
+    await logScan(
+      reader.id, normalizedUid, scannedAt, 'invalid_card', Date.now() - startTime,
+      `Unrecognised card tapped at ${reader.label || reader.room || 'reader'}`,
+      { classId: sessionForRoom?.class_id, sessionId: sessionForRoom?.id }
+    )
     return res.status(404).json({ error: 'Card not registered to any student' })
   }
 
   // Find active session for this room
-  const { data: activeSession, error: sessionError } = await supabase
-    .from('sessions')
-    .select('*, classes!inner(id, name, room)')
-    .eq('classes.room', reader.room)
-    .is('ended_at', null)
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const activeSession = await findActiveSessionForRoom(reader.room)
 
-  if (sessionError || !activeSession) {
+  if (!activeSession) {
     await logScan(reader.id, normalizedUid, scannedAt, 'no_session', Date.now() - startTime, 'No active session for room')
     return res.status(404).json({ error: 'No active session for this room' })
   }
@@ -144,7 +166,11 @@ if (timestamp) {
     .maybeSingle()
 
   if (enrolmentError || !enrolment) {
-    await logScan(reader.id, normalizedUid, scannedAt, 'not_enrolled', Date.now() - startTime, 'Student not enrolled')
+    await logScan(
+      reader.id, normalizedUid, scannedAt, 'not_enrolled', Date.now() - startTime,
+      `${student.full_name} is not enrolled in ${activeSession.classes?.name || 'this class'}`,
+      { studentId: student.id, classId: activeSession.class_id, sessionId: activeSession.id }
+    )
     return res.status(409).json({
       error: 'Student is not enrolled in the active class',
       student: student.full_name,
@@ -264,25 +290,23 @@ router.post('/bulk-upload', async (req, res) => {
       // Process each scan (same logic as individual scan)
       const { data: student } = await supabase
         .from('students')
-        .select('id')
+        .select('id, full_name')
         .eq('rfid_card_uid', normalizedUid)
         .maybeSingle()
 
       if (!student) {
-        await logScan(reader.id, normalizedUid, scanTime, 'invalid_card', 0, 'Card not registered')
+        const sessionForRoom = await findActiveSessionForRoom(reader.room)
+        await logScan(
+          reader.id, normalizedUid, scanTime, 'invalid_card', 0,
+          `Unrecognised card tapped at ${reader.label || reader.room || 'reader'} (offline upload)`,
+          { classId: sessionForRoom?.class_id, sessionId: sessionForRoom?.id }
+        )
         results.push({ rfid_card_uid, status: 'failed', error: 'Card not registered' })
         failCount++
         continue
       }
 
-      const { data: activeSession } = await supabase
-        .from('sessions')
-        .select('id, class_id, started_at')
-        .eq('classes.room', reader.room)
-        .is('ended_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      const activeSession = await findActiveSessionForRoom(reader.room)
 
       if (!activeSession) {
         await logScan(reader.id, normalizedUid, scanTime, 'no_session', 0, 'No active session')
@@ -299,7 +323,11 @@ router.post('/bulk-upload', async (req, res) => {
         .maybeSingle()
 
       if (!enrolment) {
-        await logScan(reader.id, normalizedUid, scanTime, 'not_enrolled', 0, 'Not enrolled')
+        await logScan(
+          reader.id, normalizedUid, scanTime, 'not_enrolled', 0,
+          `${student.full_name} is not enrolled in ${activeSession.classes?.name || 'this class'} (offline upload)`,
+          { studentId: student.id, classId: activeSession.class_id, sessionId: activeSession.id }
+        )
         results.push({ rfid_card_uid, status: 'failed', error: 'Not enrolled' })
         failCount++
         continue

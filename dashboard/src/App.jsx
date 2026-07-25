@@ -5,6 +5,7 @@ import AdminLoginPage from './pages/AdminLoginPage'
 import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
 import TeacherPage from './pages/TeacherPage'
+import TeacherAppealsPage from './pages/TeacherAppealsPage'
 import StudentPage from './pages/StudentPage'
 import StudentAppealsPage from './pages/StudentAppealsPage'
 import AdminPage from './pages/AdminPage'
@@ -395,6 +396,15 @@ export default function App() {
           element={
             <ProtectedRoute session={session} profile={profile} role="teacher">
               <TeacherPage session={session} profile={profile} />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/teacher/appeals"
+          element={
+            <ProtectedRoute session={session} profile={profile} role="teacher">
+              <TeacherAppealsPage session={session} profile={profile} />
             </ProtectedRoute>
           }
         />
