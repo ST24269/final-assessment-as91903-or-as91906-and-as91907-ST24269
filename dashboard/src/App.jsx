@@ -4,12 +4,14 @@ import { clientConfigError, supabase } from './api/client'
 import AdminLoginPage from './pages/AdminLoginPage'
 import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
-import TeacherPage from './pages/TeacherPage'
+import TeacherDashboardPage from './pages/TeacherDashboardPage'
+import TeacherSessionPage from './pages/TeacherSessionPage'
 import TeacherAppealsPage from './pages/TeacherAppealsPage'
 import StudentPage from './pages/StudentPage'
 import StudentAppealsPage from './pages/StudentAppealsPage'
 import AdminPage from './pages/AdminPage'
 import AccountPage from './pages/AccountPage'
+import TeacherCoverPage from './pages/TeacherCoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import PublicHomePage from './pages/PublicHomePage'
 import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
@@ -391,14 +393,36 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/teacher"
-          element={
-            <ProtectedRoute session={session} profile={profile} role="teacher">
-              <TeacherPage session={session} profile={profile} />
-            </ProtectedRoute>
-          }
-        />
+<Route
+  path="/teacher"
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <TeacherDashboardPage
+        session={session}
+        profile={profile}
+      />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/teacher/cover"
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <TeacherCoverPage session={session} profile={profile} />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/teacher/session/:sessionId"    
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <TeacherSessionPage
+        session={session}
+        profile={profile}
+      />
+    </ProtectedRoute>
+  }
+/>
 
         <Route
           path="/teacher/appeals"

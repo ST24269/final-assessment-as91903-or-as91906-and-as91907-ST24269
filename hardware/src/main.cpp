@@ -34,19 +34,22 @@ MFRC522 rfid(RC522_SS_PIN, RC522_RST_PIN);
 NetworkManager* network = nullptr;
 OfflineStorage storage;
 
+// =======================
+// TAP DEBOUNCE / ESCALATION
+// =======================
 String lastUID = "";
-unsigned long lastScanTime = 0;
+unsigned long lastTapTime = 0;
+uint8_t tapCountInBurst = 0;
+unsigned long currentDebounceMs = DEBOUNCE_MS;
+bool alertSentForBurst = false;
 
-// Starts FALSE (not "already active") so the very first successful scan
-// of a boot cycle always announces the session-start chime, instead of
-// only firing after a prior failure.
+const unsigned long MAX_DEBOUNCE_MS = 30000;
+const uint8_t ALERT_TAP_THRESHOLD = 3;
+
 bool sessionKnownActive = false;
 
 // =======================
 // BUZZER FEEDBACK
-// Every pattern below is deliberately a different rhythm/length so none
-// of them can be confused with each other, even on a simple on/off
-// active buzzer with no pitch control.
 // =======================
 
 void initBuzzer() {
@@ -60,47 +63,54 @@ void beep(int duration) {
   digitalWrite(BUZZER_PIN, LOW);
 }
 
-// Attendance marked. One short, single beep.
+// Fires immediately on power-on, before WiFi/RFID/storage init - confirms
+// the device is alive even if WiFi setup takes a while.
+void beepPoweredOn() {
+  beep(100);
+}
+
 void beepSuccess() {
   beep(150);
 }
 
-// Same card tapped twice within DEBOUNCE_MS. Two quick beeps, short
-// gap, two more quick beeps - as requested.
 void beepDuplicateTap() {
   beep(70);
   delay(60);
   beep(70);
-  delay(150);   // short gap between the two pairs
+  delay(150);
   beep(70);
   delay(60);
   beep(70);
 }
 
-// Card not recognised / server rejected it (not a session issue). One
-// long steady buzz - unmistakably different from everything else, and
-// impossible to confuse with the short success beep.
 void beepUnknownCard() {
   beep(500);
 }
 
-// No active session for this room. Two medium, evenly-spaced beeps -
-// calm rhythm since this isn't the card's fault.
 void beepNoSession() {
   beep(250);
   delay(200);
   beep(250);
 }
 
-// No WiFi / server unreachable, cached for later. Long-short.
+// Distinct from beepUnknownCard/beepNoSession: three short beeps means
+// "this card is recognised, but not enrolled in the class currently
+// running" - previously this incorrectly played beepSuccess() instead,
+// making a rejected tap sound identical to a successful one.
+void beepNotEnrolled() {
+  beep(90);
+  delay(90);
+  beep(90);
+  delay(90);
+  beep(90);
+}
+
 void beepCached() {
   beep(200);
   delay(100);
   beep(70);
 }
 
-// Class session has just started. Five-beep fanfare - more beeps than
-// any other tone, so it's unmistakable.
 void beepSessionStarted() {
   beep(80);
   delay(70);
@@ -113,7 +123,6 @@ void beepSessionStarted() {
   beep(200);
 }
 
-// Startup chirp.
 void beepBootOK() {
   beep(50);
   delay(80);
@@ -162,11 +171,6 @@ bool initStorage() {
   return true;
 }
 
-/**
- * Process a scanned card. Each ScanResult maps to exactly ONE buzzer
- * tone - no shared code paths, so an unknown-card tone can never bleed
- * into a later approved tap.
- */
 void processScan(const String& uidString, const String& timestamp) {
   if (!network->isWiFiConnected()) {
     Serial.println("WiFi not connected, caching scan for later");
@@ -193,6 +197,11 @@ void processScan(const String& uidString, const String& timestamp) {
       sessionKnownActive = false;
       break;
 
+    case ScanResult::NOT_ENROLLED:
+      Serial.println("Card recognised but not enrolled in the active class - not caching, ready for next tap");
+      beepNotEnrolled();
+      break;
+
     case ScanResult::UNKNOWN_CARD:
       Serial.println("Unknown/rejected card - not caching, ready for next tap");
       beepUnknownCard();
@@ -210,13 +219,15 @@ void setup() {
   Serial.begin(115200);
   delay(1500);
 
+  initBuzzer();
+  beepPoweredOn();
+
   Serial.println();
   Serial.println("========================================");
   Serial.println("ESP32-S3 + RC522 - Tago Attendance");
   Serial.println("========================================");
   Serial.println();
 
-  initBuzzer();
   printBootConfig();
   setupWiFi();
 
@@ -243,7 +254,16 @@ void loop() {
     network->update();
 
     if (network->needsHeartbeat(HEARTBEAT_INTERVAL_MS)) {
+      bool wasActive = network->isSessionActiveFromHeartbeat();
       network->sendHeartbeat();
+      bool nowActive = network->isSessionActiveFromHeartbeat();
+
+      if (!wasActive && nowActive) {
+        beepSessionStarted();
+        sessionKnownActive = true;
+      } else if (wasActive && !nowActive) {
+        sessionKnownActive = false;
+      }
     }
 
     if (network->isWiFiConnected() && storage.getPendingCount() > 0
@@ -266,9 +286,21 @@ void loop() {
   Serial.println(uidString);
 
   unsigned long now = millis();
-  if (uidString == lastUID && (now - lastScanTime) < DEBOUNCE_MS) {
-    Serial.println("Debounce: same card tapped too soon");
+
+  if (uidString == lastUID && (now - lastTapTime) < currentDebounceMs) {
+    tapCountInBurst++;
+    Serial.printf("Debounce: same card tapped again (%d in this burst), wait extended\n", tapCountInBurst);
+
     beepDuplicateTap();
+
+    currentDebounceMs = min(currentDebounceMs * 2, MAX_DEBOUNCE_MS);
+    lastTapTime = now;
+
+    if (tapCountInBurst >= ALERT_TAP_THRESHOLD && !alertSentForBurst && network->isWiFiConnected()) {
+      network->sendSuspiciousActivityAlert(uidString, tapCountInBurst);
+      alertSentForBurst = true;
+    }
+
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
     delay(500);
@@ -276,7 +308,10 @@ void loop() {
   }
 
   lastUID = uidString;
-  lastScanTime = now;
+  lastTapTime = now;
+  tapCountInBurst = 1;
+  currentDebounceMs = DEBOUNCE_MS;
+  alertSentForBurst = false;
 
   processScan(uidString, "");
 

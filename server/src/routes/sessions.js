@@ -17,7 +17,8 @@ const classSelect = `
 const sessionSelect = `
   *,
   classes(name, subject, room),
-  profiles(full_name)
+  readers(id, room),
+  profiles!sessions_teacher_id_fkey(full_name)
 `
 
 // GET classes available for attendance sessions
@@ -28,8 +29,10 @@ router.get('/classes', requireRole('teacher', 'admin'), async (req, res) => {
     .order('name')
 
   if (error) return res.status(500).json({ error: error.message })
+
   res.json(data)
 })
+
 
 // GET all sessions
 router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
@@ -39,8 +42,10 @@ router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
     .order('started_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
+
   res.json(data)
 })
+
 
 // GET active session for a class
 router.get('/active/:class_id', requireRole('teacher', 'admin'), async (req, res) => {
@@ -53,34 +58,72 @@ router.get('/active/:class_id', requireRole('teacher', 'admin'), async (req, res
     .limit(1)
     .maybeSingle()
 
-  if (error) return res.status(404).json({ error: 'No active session' })
-  if (!data) return res.status(404).json({ error: 'No active session' })
+  if (error) {
+    return res.status(404).json({ error: 'No active session' })
+  }
+
+  if (!data) {
+    return res.status(404).json({ error: 'No active session' })
+  }
+
   res.json(data)
 })
 
+
 // POST start a session
 router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
-  const { class_id, teacher_id, notes } = req.body
-  const sessionTeacherId = req.profile.role === 'admin'
-    ? (teacher_id || req.user.id)
-    : req.user.id
 
-  if (!class_id) {
-    return res.status(400).json({ error: 'class_id is required' })
-  }
+const {
+  class_id,
+  teacher_id,
+  notes,
+  reader_id
+} = req.body
 
+
+if (!class_id) {
+  return res.status(400).json({
+    error: 'class_id is required'
+  })
+}
+
+if (!reader_id) {
+  return res.status(400).json({
+    error: 'reader_id is required'
+  })
+}
+  // Check class exists
   const { data: classRecord, error: classError } = await supabase
     .from('classes')
     .select(classSelect)
     .eq('id', class_id)
     .single()
 
+
   if (classError || !classRecord) {
-    return res.status(404).json({ error: 'Class not found' })
+    return res.status(404).json({
+      error: 'Class not found'
+    })
   }
 
-  // Check no session already active for this class
-  const { data: existing } = await supabase
+
+  // Check reader exists
+  const { data: readerRecord, error: readerError } = await supabase
+    .from('readers')
+    .select('id, room')
+    .eq('id', reader_id)
+    .single()
+
+
+  if (readerError || !readerRecord) {
+    return res.status(404).json({
+      error: 'Reader not found'
+    })
+  }
+
+
+  // Prevent duplicate active class sessions
+  const { data: existingClassSession } = await supabase
     .from('sessions')
     .select(sessionSelect)
     .eq('class_id', class_id)
@@ -89,48 +132,102 @@ router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
     .limit(1)
     .maybeSingle()
 
-  if (existing) {
+
+  if (existingClassSession) {
     return res.status(409).json({
       error: 'A session is already active for this class',
-      active_session: existing,
+      active_session: existingClassSession
     })
   }
 
+
+  // Prevent duplicate reader sessions
+  const { data: existingReaderSession } = await supabase
+    .from('sessions')
+    .select(sessionSelect)
+    .eq('reader_id', reader_id)
+    .is('ended_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+
+  if (existingReaderSession) {
+    return res.status(409).json({
+      error: 'A session is already active on this reader',
+      active_session: existingReaderSession
+    })
+  }
+
+
+  // Create session linked to reader
   const { data, error } = await supabase
     .from('sessions')
-    .insert([{ class_id, teacher_id: sessionTeacherId, notes }])
+    .insert([
+      {
+        class_id,
+        teacher_id: sessionTeacherId,
+        reader_id,
+        notes
+      }
+    ])
     .select(sessionSelect)
     .single()
 
-  if (error) return res.status(500).json({ error: error.message })
+
+  if (error) {
+    return res.status(500).json({
+      error: error.message
+    })
+  }
+
+
   res.status(201).json(data)
 })
 
+
+
 // PATCH end a session
 router.patch('/:id/end', requireRole('teacher', 'admin'), async (req, res) => {
+
   const { data: session, error: sessionError } = await supabase
     .from('sessions')
     .select('id, ended_at')
     .eq('id', req.params.id)
     .single()
 
+
   if (sessionError || !session) {
-    return res.status(404).json({ error: 'Session not found' })
+    return res.status(404).json({
+      error: 'Session not found'
+    })
   }
+
 
   if (session.ended_at) {
     return res.json(session)
   }
 
+
   const { data, error } = await supabase
     .from('sessions')
-    .update({ ended_at: new Date().toISOString() })
+    .update({
+      ended_at: new Date().toISOString()
+    })
     .eq('id', req.params.id)
     .select(sessionSelect)
     .single()
 
-  if (error) return res.status(500).json({ error: error.message })
+
+  if (error) {
+    return res.status(500).json({
+      error: error.message
+    })
+  }
+
+
   res.json(data)
 })
+
 
 module.exports = router

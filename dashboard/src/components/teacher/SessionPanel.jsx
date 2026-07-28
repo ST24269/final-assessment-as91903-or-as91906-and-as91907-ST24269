@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Play, Square } from 'lucide-react'
 import { api } from '../../api/client'
 
@@ -7,6 +8,7 @@ function formatSessionTime(value) {
 }
 
 export default function SessionPanel({ activeSession, setActiveSession }) {
+  const navigate = useNavigate()
   const [classes, setClasses] = useState([])
   const [activeSessions, setActiveSessions] = useState([])
   const [selectedClass, setSelectedClass] = useState('')
@@ -81,18 +83,20 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
               ? prev
               : [data.active_session, ...prev]
           ))
-          setActiveSession(data.active_session)
-          setError('This class already has an active session. You can continue it or end it before starting a new one.')
+          setActiveSession?.(data.active_session)
+          // Same class already has a live session - jump straight to it
+          // rather than making the teacher click through again.
+          navigate(`/teacher/session/${data.active_session.id}`)
         } else {
           setError(data.error)
         }
       } else {
-        setActiveSession({
+        setActiveSession?.({
           ...data,
           classes: data.classes || selectedClassDetails,
         })
         setNotes('')
-        setActiveSessions((prev) => [data, ...prev.filter((sessionItem) => sessionItem.id !== data.id)])
+        navigate(`/teacher/session/${data.id}`)
       }
     } catch {
       setError('Could not start the session.')
@@ -114,7 +118,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
         setError(data.error)
       } else {
         setActiveSessions((prev) => prev.filter((sessionItem) => sessionItem.id !== activeSession.id))
-        setActiveSession(null)
+        setActiveSession?.(null)
       }
     } catch {
       setError('Could not end the session.')
@@ -178,10 +182,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
                   <button
                     key={sessionItem.id}
                     type="button"
-                    onClick={() => {
-                      setError(null)
-                      setActiveSession(sessionItem)
-                    }}
+                    onClick={() => navigate(`/teacher/session/${sessionItem.id}`)}
                     className="teacher-active-session-row"
                   >
                     <span>

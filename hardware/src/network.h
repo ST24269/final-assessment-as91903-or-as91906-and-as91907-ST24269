@@ -14,11 +14,12 @@
 #include "storage.h"
 
 enum class ScanResult {
-  SUCCESS,        // attendance marked
-  DUPLICATE,      // already recorded (HTTP 409) - treated as success
-  NO_SESSION,     // no active session for this room - retrying won't help
-  UNKNOWN_CARD,   // card not recognised / rejected by server - retrying won't help
-  NETWORK_ERROR   // couldn't reach server / timeout - worth caching + retrying
+  SUCCESS,
+  DUPLICATE,
+  NO_SESSION,
+  UNKNOWN_CARD,
+  NOT_ENROLLED,
+  NETWORK_ERROR
 };
 
 class NetworkManager {
@@ -31,17 +32,23 @@ private:
   unsigned long lastUploadAttempt;
   unsigned long uploadRetryIntervalMs;
 
+  bool lastKnownSessionActive;
+
   const char* serverUrl;
   const char* readerApiKey;
   const char* readerId;
   const char* firmwareVersion;
 
-  // Decide whether a server error message is about the session being
-  // inactive vs. the card itself being unrecognised.
   bool errorMentionsSession(const String& errMsg) {
     String lower = errMsg;
     lower.toLowerCase();
     return lower.indexOf("session") != -1;
+  }
+
+  bool errorMentionsEnrolment(const String& errMsg) {
+    String lower = errMsg;
+    lower.toLowerCase();
+    return lower.indexOf("not enrolled") != -1;
   }
 
 public:
@@ -54,7 +61,8 @@ public:
       readerApiKey(apiKey), readerId(rdrId), firmwareVersion(fwVersion),
       isConnected(false), lastHeartbeat(0),
       currentBackoff(0), heartbeatPending(false),
-      lastUploadAttempt(0), uploadRetryIntervalMs(8000) {}
+      lastUploadAttempt(0), uploadRetryIntervalMs(8000),
+      lastKnownSessionActive(false) {}
 
   void begin() {
     isConnected = (WiFi.status() == WL_CONNECTED);
@@ -78,6 +86,10 @@ public:
     return WiFi.status() == WL_CONNECTED;
   }
 
+  // Sends a heartbeat and, if the server includes a session_active field
+  // in the response, updates our local view of whether a session is live
+  // for this reader's room - lets main.cpp detect a session starting
+  // without needing a card tap first.
   bool sendHeartbeat() {
     if (!isWiFiConnected()) {
       heartbeatPending = true;
@@ -107,6 +119,14 @@ public:
       Serial.println("Heartbeat sent successfully");
       lastHeartbeat = millis();
       heartbeatPending = false;
+
+      StaticJsonDocument<512> respDoc;
+      deserializeJson(respDoc, response);
+
+      if (respDoc["session_active"].is<bool>()) {
+        lastKnownSessionActive = respDoc["session_active"].as<bool>();
+      }
+
       return true;
     }
 
@@ -114,13 +134,14 @@ public:
     return false;
   }
 
+  bool isSessionActiveFromHeartbeat() {
+    return lastKnownSessionActive;
+  }
+
   bool needsHeartbeat(unsigned long intervalMs) {
     return (millis() - lastHeartbeat) > intervalMs;
   }
 
-  // Sends a single scan and classifies exactly why it failed, so
-  // main.cpp can play the correct, unambiguous buzzer tone and decide
-  // whether caching it is even worthwhile.
   ScanResult sendScan(const String& uid, const String& timestamp) {
     if (!isWiFiConnected()) {
       Serial.println("WiFi not connected, cannot send scan");
@@ -167,30 +188,70 @@ public:
       return errorMentionsSession(errMsg) ? ScanResult::NO_SESSION : ScanResult::UNKNOWN_CARD;
     }
 
+    // 409 covers several distinct rejections from the backend: an actual
+    // duplicate tap, "already marked present", "not enrolled in this
+    // class", and "reader not assigned to a room". These are NOT the same
+    // situation and must not all be reported to the person tapping as a
+    // plain success beep - only genuine duplicates should sound like that.
     if (httpCode == 409) {
+      StaticJsonDocument<512> respDoc;
+      deserializeJson(respDoc, response);
+      String errMsg = respDoc["error"].as<String>();
+      Serial.printf("Server rejected (409): %s\n", errMsg.c_str());
+
+      if (errorMentionsEnrolment(errMsg)) {
+        return ScanResult::NOT_ENROLLED;
+      }
+
+      if (errorMentionsSession(errMsg)) {
+        return ScanResult::NO_SESSION;
+      }
+
       Serial.println("Scan already recorded");
       currentBackoff = 0;
       return ScanResult::DUPLICATE;
     }
 
     if (httpCode == 400 || httpCode == 403 || httpCode == 404 || httpCode == 422) {
-      // Any of these client-error codes mean the server actively looked
-      // at the request and said no - figure out whether it's a session
-      // problem or a card problem from the message text.
       StaticJsonDocument<512> respDoc;
       deserializeJson(respDoc, response);
       String errMsg = respDoc["error"].as<String>();
       return errorMentionsSession(errMsg) ? ScanResult::NO_SESSION : ScanResult::UNKNOWN_CARD;
     }
 
-    // Anything else (5xx, 0, timeout) is a genuine network/server fault,
-    // worth retrying.
     if (currentBackoff == 0) {
       currentBackoff = 1;
     } else {
       currentBackoff = min((int)currentBackoff * 2, 60);
     }
     return ScanResult::NETWORK_ERROR;
+  }
+
+  // Alerts the server that the same card was tapped repeatedly in a
+  // short burst. NOTE: "/api/attendance/flag" is a placeholder route -
+  // confirm this matches your actual backend endpoint.
+  bool sendSuspiciousActivityAlert(const String& uid, int tapCount) {
+    if (!isWiFiConnected()) return false;
+
+    HTTPClient http;
+    String url = String(serverUrl) + "/api/attendance/flag";
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<256> doc;
+    doc["reader_api_key"] = readerApiKey;
+    doc["rfid_card_uid"] = uid;
+    doc["reason"] = "repeated_rapid_taps";
+    doc["tap_count"] = tapCount;
+
+    String body;
+    serializeJson(doc, body);
+    int httpCode = http.POST(body);
+    http.end();
+
+    Serial.printf("Suspicious activity alert sent: HTTP %d\n", httpCode);
+    return httpCode == 200 || httpCode == 201;
   }
 
   bool canRetryUploadNow() {

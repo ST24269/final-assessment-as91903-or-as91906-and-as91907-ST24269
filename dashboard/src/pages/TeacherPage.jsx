@@ -105,12 +105,10 @@ export default function TeacherPage({ session, profile }) {
     return () => supabase.removeChannel(channel)
   }, [activeSession])
   
-async function handleFlag(attendanceId) {
-    const updated = await api.patch(`/api/attendance/${attendanceId}/flag`, { reason: 'photo_mismatch' })
-    if (!updated?.error) {
-      setAttendance((prev) => prev.map((row) => (row.id === attendanceId ? { ...row, ...updated } : row)))
-    }
-  }
+function handleEventUpdate(attendanceId, updatedRecord) {
+  setAttendance((prev) => prev.map((row) => (row.id === attendanceId ? { ...row, ...updatedRecord } : row)))
+}
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -137,8 +135,7 @@ async function handleFlag(attendanceId) {
         <ScanIssuesAlert issues={visibleScanIssues} onDismiss={dismissScanIssue} />
 {activeSession && (
           <>
-            <LiveFeed events={attendance} onFlag={handleFlag} />
-            <AttendanceTable
+<LiveFeed events={attendance} onEventUpdate={handleEventUpdate} />            <AttendanceTable
               attendance={attendance}
               activeSession={activeSession}
               setAttendance={setAttendance}

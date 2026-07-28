@@ -274,4 +274,49 @@ router.delete('/admin/:id', requireRole('admin'), async (req, res) => {
   res.json({ deleted: true })
 })
 
+router.get('/teachers', requireRole('teacher', 'admin'), async (req, res) => {
+  const search = String(req.query.search || '').trim()
+
+  let query = supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .eq('role', 'teacher')
+    .order('full_name')
+
+  if (search) {
+    query = query.ilike('full_name', `%${search}%`)
+  }
+
+  const { data, error } = await query
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(data || [])
+})
+
+router.get('/of/:teacherId', requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { data: classes, error: classError } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('teacher_id', req.params.teacherId)
+
+    if (classError) return res.status(500).json({ error: classError.message })
+
+    const classIds = (classes || []).map((item) => item.id)
+    if (!classIds.length) return res.json([])
+
+    const { data, error } = await supabase
+      .from('timetable_periods')
+      .select(timetableSelect)
+      .in('class_id', classIds)
+      .eq('active', true)
+      .order('day_of_week')
+      .order('start_time')
+
+    if (error) return res.status(500).json({ error: error.message })
+    res.json((data || []).map((period) => normalizePeriod(period)))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 module.exports = router

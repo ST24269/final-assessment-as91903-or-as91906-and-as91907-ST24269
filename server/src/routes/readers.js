@@ -3,6 +3,23 @@ const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
 
+// Mirrors the logic in attendance.js's findActiveSessionForRoom - kept
+// local here rather than importing from attendance.js to avoid a
+// circular require between the two route files.
+async function isRoomSessionActive(room) {
+  if (!room) return false
+
+  const { data } = await supabase
+    .from('sessions')
+    .select('id, classes!inner(room)')
+    .eq('classes.room', room)
+    .is('ended_at', null)
+    .limit(1)
+    .maybeSingle()
+
+  return Boolean(data)
+}
+
 // POST /api/readers/:id/heartbeat - Reader heartbeat/keepalive.
 // Hardware-authenticated by reader api_key (like attendance.js /scan),
 // so this must stay ABOVE router.use(authenticateUser).
@@ -46,8 +63,13 @@ router.post('/:id/heartbeat', async (req, res) => {
       .order('scanned_at')
       .limit(10)
 
+    // Let the reader know whether its room currently has a live session,
+    // so it can chime a session-start sound without needing a card tap.
+    const sessionActive = await isRoomSessionActive(reader.room)
+
     res.json({
       success: true,
+      session_active: sessionActive,
       pending_scans_count: pendingScans?.length || 0,
       pending_scans: pendingScans || []
     })
@@ -71,10 +93,9 @@ function getTimeAgo(date) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
-// GET /api/readers - List all readers (admin only)
-router.get('/', requireRole('admin'), async (req, res) => {
+// GET /api/readers - List available readers for session selection
+router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    // Explicitly select all columns to avoid any ambiguity
     const { data, error } = await supabase
       .from('readers')
       .select('id, label, room, api_key, last_seen, last_scan, active, firmware_version, mac_address, ip_address, online_status, created_at')
@@ -82,14 +103,11 @@ router.get('/', requireRole('admin'), async (req, res) => {
 
     if (error) throw error
 
-    // Handle null/empty data
     if (!data || data.length === 0) {
       return res.json([])
     }
 
-    // Transform data to include computed fields
     const readers = data.map((reader) => {
-      // Determine online status based on last_seen
       let computedOnlineStatus = 'offline'
       if (reader.last_seen) {
         const secondsSinceLastSeen = (Date.now() - new Date(reader.last_seen).getTime()) / 1000
@@ -100,8 +118,6 @@ router.get('/', requireRole('admin'), async (req, res) => {
         }
       }
 
-      // Note: scan_count_today must be fetched separately or via a join
-      // For now, we return 0 - the dashboard can call a separate endpoint if needed
       return {
         id: reader.id,
         label: reader.label,
@@ -115,7 +131,7 @@ router.get('/', requireRole('admin'), async (req, res) => {
         ip_address: reader.ip_address,
         online_status: computedOnlineStatus,
         last_seen_ago: reader.last_seen ? getTimeAgo(new Date(reader.last_seen)) : null,
-        scan_count_today: 0  // Will be populated by stats endpoint
+        scan_count_today: 0
       }
     })
 
@@ -129,25 +145,21 @@ router.get('/', requireRole('admin'), async (req, res) => {
 // GET /api/readers/stats - Dashboard statistics (admin only)
 router.get('/stats/summary', requireRole('admin'), async (req, res) => {
   try {
-    // Get total readers
     const { count: totalReaders } = await supabase
       .from('readers')
       .select('*', { count: 'exact', head: true })
 
-    // Get online readers (seen within last 5 minutes)
     const { count: onlineReaders } = await supabase
       .from('readers')
       .select('*', { count: 'exact', head: true })
       .gte('last_seen', new Date(Date.now() - 5 * 60 * 1000).toISOString())
 
-    // Get today's total scans
     const { count: todayScans } = await supabase
       .from('scan_logs')
       .select('*', { count: 'exact', head: true })
       .eq('result', 'success')
       .gte('scanned_at', new Date().toISOString().split('T')[0])
 
-    // Get pending offline scans
     const { count: pendingScans } = await supabase
       .from('offline_scans')
       .select('*', { count: 'exact', head: true })
@@ -179,7 +191,6 @@ router.get('/:id', requireRole('admin'), async (req, res) => {
       return res.status(404).json({ error: 'Reader not found' })
     }
 
-    // Get recent scan logs
     const { data: scanLogs } = await supabase
       .from('scan_logs')
       .select('*')
@@ -187,7 +198,6 @@ router.get('/:id', requireRole('admin'), async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(20)
 
-    // Get today's scan count
     const { count } = await supabase
       .from('scan_logs')
       .select('*', { count: 'exact', head: true })
@@ -215,7 +225,6 @@ router.post('/', requireRole('admin'), async (req, res) => {
       return res.status(400).json({ error: 'label and api_key are required' })
     }
 
-    // Check for duplicate API key
     const { data: existing } = await supabase
       .from('readers')
       .select('id')
@@ -254,7 +263,6 @@ router.patch('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { label, room, active, firmware_version } = req.body
 
-    // Check reader exists
     const { data: existing } = await supabase
       .from('readers')
       .select('id')
@@ -299,58 +307,6 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
     res.status(204).send()
   } catch (error) {
     console.error('Error deleting reader:', error)
-    res.status(500).json({ error: error.message })
-  }
-})
-
-// POST /api/readers/:id/heartbeat - Reader heartbeat/keepalive
-router.post('/:id/heartbeat', async (req, res) => {
-  try {
-    const { api_key, firmware_version, mac_address, ip_address } = req.body
-
-    // Validate API key
-    const { data: reader, error: readerError } = await supabase
-      .from('readers')
-      .select('*')
-      .eq('id', req.params.id)
-      .eq('api_key', api_key)
-      .eq('active', true)
-      .maybeSingle()
-
-    if (readerError || !reader) {
-      return res.status(401).json({ error: 'Invalid reader credentials' })
-    }
-
-    // Update reader status
-    const { error } = await supabase
-      .from('readers')
-      .update({
-        last_seen: new Date().toISOString(),
-        online_status: 'online',
-        ...(firmware_version && { firmware_version }),
-        ...(mac_address && { mac_address }),
-        ...(ip_address && { ip_address })
-      })
-      .eq('id', req.params.id)
-
-    if (error) throw error
-
-    // Check for pending offline scans to upload
-    const { data: pendingScans } = await supabase
-      .from('offline_scans')
-      .select('*')
-      .eq('reader_id', reader.id)
-      .eq('status', 'pending')
-      .order('scanned_at')
-      .limit(10)
-
-    res.json({
-      success: true,
-      pending_scans_count: pendingScans?.length || 0,
-      pending_scans: pendingScans || []
-    })
-  } catch (error) {
-    console.error('Error in heartbeat:', error)
     res.status(500).json({ error: error.message })
   }
 })

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../api/client'
+import { api } from '../../api/client'
 
 export default function ClassesManager() {
   const [classes, setClasses] = useState([])
@@ -32,19 +33,24 @@ export default function ClassesManager() {
   const addClass = async () => {
     if (!form.name || !form.subject) return setError('Name and subject required')
     setError(null)
-    const { data, error } = await supabase
-      .from('classes')
-      .insert([{ name: form.name, subject: form.subject, room: form.room || null, teacher_id: form.teacher_id || null }])
-      .select('*, profiles(full_name)')
-      .single()
-    if (error) return setError(error.message)
+
+    const data = await api.post('/api/classes', {
+      name: form.name,
+      subject: form.subject,
+      room: form.room || null,
+      teacher_id: form.teacher_id || null,
+    })
+
+    if (!data) return setError('Could not create the class.')
+    if (data.error) return setError(data.error)
+
     setClasses(prev => [...prev, data])
     setForm({ name: '', subject: '', room: '', teacher_id: '' })
   }
 
   const deleteClass = async (id) => {
     if (!confirm('Delete this class?')) return
-    await supabase.from('classes').delete().eq('id', id)
+    await api.delete(`/api/classes/${id}`)
     setClasses(prev => prev.filter(c => c.id !== id))
   }
 
@@ -55,9 +61,9 @@ export default function ClassesManager() {
       <div className="card">
         <p className="card-title">Add Class</p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <input placeholder="Class name (e.g. 13COM)" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} style={{ flex: 1, minWidth: '130px' }} />
-          <input placeholder="Subject" value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} style={{ flex: 2, minWidth: '140px' }} />
-          <input placeholder="Room" value={form.room} onChange={e => setForm(p => ({ ...p, room: e.target.value }))} style={{ flex: 1, minWidth: '100px' }} />
+          <input placeholder="Class name (e.g. CSC3)" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} style={{ flex: 1, minWidth: '130px' }} />
+          <input placeholder="Subject (e.g. Computer Science)" value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} style={{ flex: 2, minWidth: '140px' }} />
+          <input placeholder="Learning area (e.g. Kea)" value={form.room} onChange={e => setForm(p => ({ ...p, room: e.target.value }))} style={{ flex: 1, minWidth: '100px' }} />
           <select className="session-select" value={form.teacher_id} onChange={e => setForm(p => ({ ...p, teacher_id: e.target.value }))} style={{ flex: 1, minWidth: '140px' }}>
             <option value="">No teacher</option>
             {teachers.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
@@ -72,7 +78,7 @@ export default function ClassesManager() {
         {classes.length === 0 ? <p className="empty-state">no classes yet</p> : (
           <table className="attendance-table">
             <thead>
-              <tr><th>Name</th><th>Subject</th><th>Room</th><th>Teacher</th><th></th></tr>
+              <tr><th>Name</th><th>Subject</th><th>Learning Area</th><th>Teacher</th><th></th></tr>
             </thead>
             <tbody>
               {classes.map(c => (

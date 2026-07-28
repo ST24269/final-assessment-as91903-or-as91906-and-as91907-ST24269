@@ -6,7 +6,7 @@ const { isValidEmailAddress, sendEmail } = require('../utils/email')
 
 router.use(authenticateUser)
 
-const BASE_STUDENT_COLUMNS = 'id, full_name, student_number, year_level, rfid_card_uid, created_at'
+const BASE_STUDENT_COLUMNS = 'id, full_name, student_number, year_level, rfid_card_uid, created_at, photo_url'
 const EXTENDED_STUDENT_COLUMNS = `${BASE_STUDENT_COLUMNS}, first_name, last_name, kainga, form_group, la_teacher_id, account_status, rfid_status, disabled_at`
 const CLASS_LINK_COLUMNS = 'id, name, subject, room, teacher_id, profiles(full_name, email)'
 const VALID_KAINGA = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
@@ -958,16 +958,26 @@ router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
   }
 })
 
-// GET single student
-router.get('/:id', requireRole('teacher', 'admin'), async (req, res) => {
-  const { data, error } = await supabase
-    .from('students')
-    .select(BASE_STUDENT_COLUMNS)
-    .eq('id', req.params.id)
-    .single()
+// Full student detail for the teacher/admin click-to-expand panel:
+// enrolled classes, LA teacher, and weekly timetable slots.
+router.get('/:id/detail', requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const student = await getEnrichedStudent(req.params.id)
+    if (!student) return res.status(404).json({ error: 'Student not found' })
 
-  if (error) return res.status(404).json({ error: 'Student not found' })
-  res.json(data)
+    const { data: timetable, error: timetableError } = await supabase
+      .from('timetable_slots')
+      .select('*')
+      .eq('student_id', req.params.id)
+      .order('day_of_week')
+      .order('start_time')
+
+    if (timetableError) throw new Error(timetableError.message)
+
+    res.json({ ...student, timetable: timetable || [] })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
 })
 
 // POST create a simple student record. Rich student + login creation lives at /manage.

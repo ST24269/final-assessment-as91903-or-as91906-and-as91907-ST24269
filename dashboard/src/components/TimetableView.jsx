@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarDays, Clock3, MapPin, UserRound } from 'lucide-react'
+import { CalendarDays, Clock3, MapPin, Play, UserRound } from 'lucide-react'
 
 const DAYS = [
   { value: 1, short: 'Mon', label: 'Monday' },
@@ -8,8 +8,6 @@ const DAYS = [
   { value: 4, short: 'Thu', label: 'Thursday' },
   { value: 5, short: 'Fri', label: 'Friday' },
 ]
-
-
 
 function dayOfWeekFor(date = new Date()) {
   const day = date.getDay()
@@ -61,7 +59,26 @@ function sortPeriods(periods) {
   ))
 }
 
-function FocusCard({ label, period }) {
+function StartClassButton({ period, onStartClass, starting }) {
+  if (!onStartClass || !period?.class_id) return null
+
+  return (
+    <button
+      type="button"
+      className="timetable-start-btn"
+      onClick={(event) => {
+        event.stopPropagation()
+        onStartClass(period)
+      }}
+      disabled={starting}
+    >
+      <Play size={13} strokeWidth={2.4} />
+      {starting ? 'Starting...' : 'Start session'}
+    </button>
+  )
+}
+
+function FocusCard({ label, period, onStartClass, startingId }) {
   return (
     <div className="timetable-focus-card">
       <span>{label}</span>
@@ -82,6 +99,7 @@ function FocusCard({ label, period }) {
             <UserRound size={14} strokeWidth={2.2} />
             {periodTeacher(period)}
           </p>
+          <StartClassButton period={period} onStartClass={onStartClass} starting={startingId === period.id} />
         </>
       ) : (
         <strong>No class scheduled</strong>
@@ -98,8 +116,10 @@ export default function TimetableView({
   title = 'Timetable',
   subtitle = 'Weekly class schedule',
   emptyMessage = 'No timetable periods yet.',
+  onStartClass = null,
 }) {
   const [selectedDay, setSelectedDay] = useState(dayOfWeekFor())
+  const [startingId, setStartingId] = useState(null)
   const sortedPeriods = useMemo(() => sortPeriods(Array.isArray(periods) ? periods : []), [periods])
 
   const dayCounts = useMemo(() => {
@@ -134,6 +154,16 @@ export default function TimetableView({
     sortedPeriods.filter((period) => Number(period.day_of_week) === Number(selectedDay))
   ), [selectedDay, sortedPeriods])
 
+  async function handleStartClass(period) {
+    if (!onStartClass) return
+    setStartingId(period.id)
+    try {
+      await onStartClass(period)
+    } finally {
+      setStartingId(null)
+    }
+  }
+
   return (
     <section className="portal-section timetable-view">
       <div className="portal-section-header">
@@ -152,8 +182,8 @@ export default function TimetableView({
       ) : (
         <>
           <div className="timetable-focus-grid">
-            <FocusCard label="Current class" period={focusPeriods.current} />
-            <FocusCard label="Next class" period={focusPeriods.next} />
+            <FocusCard label="Current class" period={focusPeriods.current} onStartClass={onStartClass ? handleStartClass : null} startingId={startingId} />
+            <FocusCard label="Next class" period={focusPeriods.next} onStartClass={onStartClass ? handleStartClass : null} startingId={startingId} />
           </div>
 
           <div className="timetable-day-tabs" role="tablist" aria-label="Timetable days">
@@ -196,6 +226,7 @@ export default function TimetableView({
                     <UserRound size={14} strokeWidth={2.2} />
                     {periodTeacher(period)}
                   </span>
+                  <StartClassButton period={period} onStartClass={onStartClass ? handleStartClass : null} starting={startingId === period.id} />
                 </div>
               ))
             )}
