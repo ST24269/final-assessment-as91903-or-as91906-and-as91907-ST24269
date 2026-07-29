@@ -14,15 +14,17 @@ export async function startSessionForClass(
     }
   }
 
-  if (!readerId) {
-    return {
-      error: 'No classroom reader selected.'
-    }
-  }
-
+  // readerId is optional here on purpose: the backend (/api/sessions/start)
+  // auto-matches a reader to this class by room when reader_id isn't
+  // supplied, the same way attendance.js matches an incoming scan to a
+  // session by room. Nothing in the current UI collects a reader_id, so
+  // requiring it here blocked every single session start before the
+  // request ever left the browser. If you later add a manual reader
+  // picker to the UI, pass its value through as readerId and it'll be
+  // used instead of the automatic match.
   const data = await api.post('/api/sessions/start', {
     class_id: classId,
-    reader_id: readerId,
+    ...(readerId ? { reader_id: readerId } : {}),
     notes,
     covering_for_teacher_id: coveringForTeacherId,
   })

@@ -160,8 +160,12 @@ export default function ReadersManager() {
       api_key: form.api_key
     })
 
+    // Same rule as loadReaders() above: on success this is the created
+    // reader object directly, not wrapped in { data: reader }. Reading
+    // result.data here was always undefined, which got pushed straight
+    // into the readers array and crashed the table on r.id.
     if (result.error) return setError(result.error)
-    setReaders(prev => [...prev, result.data])
+    setReaders(prev => [...prev, result])
     setForm({ label: '', room: '', api_key: generateKey() })
   }
 
@@ -254,7 +258,7 @@ export default function ReadersManager() {
             </thead>
             <tbody>
               {readers.map(r => (
-                <ReaderRow key={r.id} reader={r} />
+                <ReaderRow key={r?.id} reader={r} />
               ))}
             </tbody>
           </table>

@@ -73,25 +73,20 @@ router.get('/active/:class_id', requireRole('teacher', 'admin'), async (req, res
 // POST start a session
 router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
 
-const {
-  class_id,
-  teacher_id,
-  notes,
-  reader_id
-} = req.body
+  const {
+    class_id,
+    notes,
+    reader_id: providedReaderId,
+    // Not yet persisted - see note below on why this isn't inserted yet.
+    covering_for_teacher_id,
+  } = req.body
 
+  if (!class_id) {
+    return res.status(400).json({
+      error: 'class_id is required'
+    })
+  }
 
-if (!class_id) {
-  return res.status(400).json({
-    error: 'class_id is required'
-  })
-}
-
-if (!reader_id) {
-  return res.status(400).json({
-    error: 'reader_id is required'
-  })
-}
   // Check class exists
   const { data: classRecord, error: classError } = await supabase
     .from('classes')
@@ -99,28 +94,63 @@ if (!reader_id) {
     .eq('id', class_id)
     .single()
 
-
   if (classError || !classRecord) {
     return res.status(404).json({
       error: 'Class not found'
     })
   }
 
+  // Resolve the reader for this session. If the caller explicitly supplied
+  // one, use it (still validated below). Otherwise - the normal case, since
+  // nothing in the UI currently collects a reader_id - match a reader to
+  // this class automatically by room, the same way attendance.js already
+  // matches an incoming scan to a session by room.
+  let readerRecord = null
 
-  // Check reader exists
-  const { data: readerRecord, error: readerError } = await supabase
-    .from('readers')
-    .select('id, room')
-    .eq('id', reader_id)
-    .single()
+  if (providedReaderId) {
+    const { data, error } = await supabase
+      .from('readers')
+      .select('id, room')
+      .eq('id', providedReaderId)
+      .single()
 
+    if (error || !data) {
+      return res.status(404).json({ error: 'Reader not found' })
+    }
 
-  if (readerError || !readerRecord) {
-    return res.status(404).json({
-      error: 'Reader not found'
-    })
+    readerRecord = data
+  } else {
+    if (!classRecord.room) {
+      return res.status(409).json({
+        error: `"${classRecord.name}" has no learning area/room set, so no classroom reader can be matched. Set the class's learning area in Manage Classes first.`,
+      })
+    }
+
+    const { data: readersForRoom, error: readerLookupError } = await supabase
+      .from('readers')
+      .select('id, room')
+      .eq('room', classRecord.room)
+      .eq('active', true)
+
+    if (readerLookupError) {
+      return res.status(500).json({ error: readerLookupError.message })
+    }
+
+    if (!readersForRoom || readersForRoom.length === 0) {
+      return res.status(404).json({
+        error: `No active classroom reader is registered for room "${classRecord.room}".`,
+      })
+    }
+
+    if (readersForRoom.length > 1) {
+      return res.status(409).json({
+        error: `Multiple active readers are registered for room "${classRecord.room}". Pass reader_id explicitly to choose one.`,
+        readers: readersForRoom,
+      })
+    }
+
+    readerRecord = readersForRoom[0]
   }
-
 
   // Prevent duplicate active class sessions
   const { data: existingClassSession } = await supabase
@@ -132,7 +162,6 @@ if (!reader_id) {
     .limit(1)
     .maybeSingle()
 
-
   if (existingClassSession) {
     return res.status(409).json({
       error: 'A session is already active for this class',
@@ -140,17 +169,15 @@ if (!reader_id) {
     })
   }
 
-
   // Prevent duplicate reader sessions
   const { data: existingReaderSession } = await supabase
     .from('sessions')
     .select(sessionSelect)
-    .eq('reader_id', reader_id)
+    .eq('reader_id', readerRecord.id)
     .is('ended_at', null)
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-
 
   if (existingReaderSession) {
     return res.status(409).json({
@@ -159,28 +186,31 @@ if (!reader_id) {
     })
   }
 
-
-  // Create session linked to reader
+  // NOTE: `covering_for_teacher_id` is accepted above but intentionally not
+  // written to the sessions table yet - this schema's `sessions` table
+  // (per sessionSelect) only has class_id/teacher_id/reader_id/notes, no
+  // column to record who covered the class. If you want that tracked,
+  // add a `covering_for_teacher_id` column to `sessions` and uncomment
+  // the line below.
   const { data, error } = await supabase
     .from('sessions')
     .insert([
       {
         class_id,
-        teacher_id: sessionTeacherId,
-        reader_id,
-        notes
+        teacher_id: req.profile.id,
+        reader_id: readerRecord.id,
+        notes,
+        // covering_for_teacher_id: covering_for_teacher_id || null,
       }
     ])
     .select(sessionSelect)
     .single()
-
 
   if (error) {
     return res.status(500).json({
       error: error.message
     })
   }
-
 
   res.status(201).json(data)
 })
