@@ -19,7 +19,7 @@ CREATE TABLE students (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   full_name TEXT NOT NULL,
   student_number TEXT UNIQUE NOT NULL,
-  year_level INT CHECK (year_level BETWEEN 9 AND 13),
+  year_level INT CHECK (year_level BETWEEN 11 AND 13),
   rfid_card_uid TEXT UNIQUE,              -- null until card is assigned
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -9,6 +9,7 @@ import {
   Mail,
   MessageSquareWarning,
   ScanLine,
+  UploadCloud,
   UserRound,
   UsersRound,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ import ProfileMenu from '../components/ProfileMenu'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 import StudentsManager from '../components/admin/StudentsManager'
+import RosterImportManager from '../components/admin/RosterImportManager'
 import ClassesManager from '../components/admin/ClassesManager'
 import ReadersManager from '../components/admin/ReadersManager'
 import AttendanceOverview from '../components/admin/AttendanceOverview'
@@ -36,6 +38,16 @@ const TABS = [
     tips: [
       'Deactivate a card instead of deleting a student if it is lost or stolen.',
       'Bulk actions apply to every row currently checked, not the whole table.',
+    ],
+  },
+  {
+    id: 'import',
+    label: 'Import Students',
+    Icon: UploadCloud,
+    description: 'Bring students across from the old system via CSV',
+    tips: [
+      'Student numbers must be numbers only, and year level must be 11, 12, or 13.',
+      'Rows that fail validation are flagged in the preview and skipped, so a bad row won\'t block the rest of the import.',
     ],
   },
   {
@@ -309,6 +321,7 @@ export default function AdminPage({ session, profile }) {
 
             <div className="admin-panel-content">
               {tab === 'students' && <StudentsManager />}
+              {tab === 'import' && <RosterImportManager />}
               {tab === 'classes' && <ClassesManager />}
               {tab === 'linking' && <StudentClassLinksManager />}
               {tab === 'appeals' && <AppealsManager />}

@@ -19,10 +19,22 @@ const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 function parseYearLevel(yearLevel) {
   if (yearLevel === null || yearLevel === undefined || yearLevel === '') return null
   const parsed = Number(yearLevel)
-  if (!Number.isInteger(parsed) || parsed < 9 || parsed > 13) {
-    return { error: 'year_level must be a whole number from 9 to 13' }
+  if (!Number.isInteger(parsed) || parsed < 11 || parsed > 13) {
+    return { error: 'year_level must be a whole number from 11 to 13' }
   }
   return parsed
+}
+
+const STUDENT_NUMBER_PATTERN = /^[0-9]{1,20}$/
+
+// Student IDs (ST numbers) are numeric only - no letters, spaces, or symbols.
+function validateStudentNumber(value) {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) return { error: 'Student ID is required.' }
+  if (!STUDENT_NUMBER_PATTERN.test(trimmed)) {
+    return { error: 'Student ID must contain numbers only (no letters or symbols).' }
+  }
+  return trimmed
 }
 
 function splitName(fullName = '') {
@@ -394,16 +406,16 @@ async function getEnrichedStudent(id) {
 async function buildStudentPayload(body, { includeRfid = true, defaultStatus = 'active' } = {}) {
   const extended = await supportsExtendedStudentColumns()
   const fullName = buildFullName(body)
-  const studentNumber = String(body.student_number || '').trim()
+  const validatedNumber = validateStudentNumber(body.student_number)
   const parsedYearLevel = parseYearLevel(body.year_level)
 
   if (!fullName) return { error: 'Student first and last name are required.' }
-  if (!studentNumber) return { error: 'Student ID is required.' }
+  if (validatedNumber?.error) return { error: validatedNumber.error }
   if (parsedYearLevel?.error) return { error: parsedYearLevel.error }
 
   const payload = {
     full_name: fullName,
-    student_number: studentNumber,
+    student_number: validatedNumber,
     year_level: parsedYearLevel,
   }
 

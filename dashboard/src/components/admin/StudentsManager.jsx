@@ -14,7 +14,7 @@ import {
 import { api, supabase } from '../../api/client'
 
 const KAINGA_OPTIONS = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
-const YEAR_LEVELS = ['9', '10', '11', '12', '13']
+const YEAR_LEVELS = ['11', '12', '13']
 const RECENTLY_ADDED_CUTOFF = Date.now() - (30 * 24 * 60 * 60 * 1000)
 const EMPTY_FORM = {
   first_name: '',
@@ -77,19 +77,26 @@ function csvEscape(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
-function exportStudents(students) {
-  const headers = ['Name', 'Student ID', 'Email', 'Year', 'Class', 'Kainga', 'RFID', 'Account status', 'Attendance']
-  const rows = students.map((student) => [
-    student.full_name,
-    student.student_number,
-    student.email,
-    student.year_level ? `Year ${student.year_level}` : '',
-    student.class_label,
-    student.kainga,
-    student.rfid_card_uid,
-    student.account_status,
-    attendanceLabel(student.attendance_summary),
-  ])
+// Catalog of exportable fields. Admins pick which of these end up as columns
+// in the CSV instead of always getting every field.
+const EXPORT_FIELDS = [
+  { id: 'name', label: 'Name', get: (student) => student.full_name },
+  { id: 'student_number', label: 'Student ID', get: (student) => student.student_number },
+  { id: 'email', label: 'Email', get: (student) => student.email },
+  { id: 'year_level', label: 'Year', get: (student) => student.year_level || '' },
+  { id: 'class_label', label: 'Class', get: (student) => student.class_label },
+  { id: 'kainga', label: 'Kainga', get: (student) => student.kainga },
+  { id: 'rfid_card_uid', label: 'RFID', get: (student) => student.rfid_card_uid },
+  { id: 'account_status', label: 'Account status', get: (student) => student.account_status },
+  { id: 'attendance', label: 'Attendance', get: (student) => attendanceLabel(student.attendance_summary) },
+]
+
+const DEFAULT_EXPORT_FIELD_IDS = EXPORT_FIELDS.map((field) => field.id)
+
+function exportStudents(students, fieldIds = DEFAULT_EXPORT_FIELD_IDS) {
+  const fields = EXPORT_FIELDS.filter((field) => fieldIds.includes(field.id))
+  const headers = fields.map((field) => field.label)
+  const rows = students.map((student) => fields.map((field) => field.get(student)))
   const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -150,13 +157,19 @@ function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, sa
           </div>
           <div className="login-field">
             <label htmlFor="student-number">Student ID</label>
-            <input id="student-number" value={form.student_number} onChange={(event) => setForm((current) => ({ ...current, student_number: event.target.value }))} />
+            <input
+              id="student-number"
+              inputMode="numeric"
+              value={form.student_number}
+              onChange={(event) => setForm((current) => ({ ...current, student_number: event.target.value.replace(/\D/g, '') }))}
+              placeholder="Numbers only"
+            />
           </div>
           <div className="login-field">
             <label htmlFor="student-year">Year level</label>
             <select id="student-year" className="session-select" value={form.year_level} onChange={(event) => setForm((current) => ({ ...current, year_level: event.target.value }))}>
               <option value="">Not set</option>
-              {YEAR_LEVELS.map((year) => <option key={year} value={year}>Year {year}</option>)}
+              {YEAR_LEVELS.map((year) => <option key={year} value={year}>{year}</option>)}
             </select>
           </div>
           <div className="login-field">
@@ -291,6 +304,58 @@ function RfidModal({ student, form, setForm, onClose, onSubmit, saving }) {
   )
 }
 
+function ExportFieldsModal({ count, onClose, onExport }) {
+  const [selected, setSelected] = useState(DEFAULT_EXPORT_FIELD_IDS)
+
+  const toggleField = (fieldId) => {
+    setSelected((current) => (
+      current.includes(fieldId)
+        ? current.filter((id) => id !== fieldId)
+        : [...current, fieldId]
+    ))
+  }
+
+  return (
+    <div className="student-modal-backdrop" role="presentation">
+      <section className="student-modal student-modal-small" role="dialog" aria-modal="true" aria-labelledby="export-fields-title">
+        <div className="student-modal-header">
+          <div>
+            <p className="card-title">Export Students</p>
+            <h3 id="export-fields-title">Choose columns to export ({count} student{count === 1 ? '' : 's'})</h3>
+          </div>
+          <button type="button" className="student-icon-button" onClick={onClose} aria-label="Close">
+            <X size={18} strokeWidth={2.2} />
+          </button>
+        </div>
+
+        <div className="student-form-grid">
+          {EXPORT_FIELDS.map((field) => (
+            <label key={field.id} className="account-toggle-row student-form-wide">
+              <input
+                type="checkbox"
+                checked={selected.includes(field.id)}
+                onChange={() => toggleField(field.id)}
+              />
+              <span>{field.label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="student-modal-actions">
+          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            disabled={selected.length === 0}
+            onClick={() => onExport(selected)}
+          >
+            Export CSV
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function ConfirmModal({ action, student, onClose, onConfirm, saving }) {
   const isDelete = action === 'delete'
   return (
@@ -344,6 +409,7 @@ export default function StudentsManager() {
   const [rfidModal, setRfidModal] = useState(null)
   const [rfidForm, setRfidForm] = useState({ action: 'assign', rfid_card_uid: '' })
   const [confirmModal, setConfirmModal] = useState(null)
+  const [exportModal, setExportModal] = useState(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoNotice, setPhotoNotice] = useState(null)
 
@@ -843,7 +909,7 @@ export default function StudentsManager() {
         </select>
         <select className="session-select" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
           <option value="all">All years</option>
-          {YEAR_LEVELS.map((year) => <option key={year} value={year}>Year {year}</option>)}
+          {YEAR_LEVELS.map((year) => <option key={year} value={year}>{year}</option>)}
         </select>
         <select className="session-select" value={kaingaFilter} onChange={(event) => setKaingaFilter(event.target.value)}>
           <option value="all">All kainga</option>
@@ -858,7 +924,7 @@ export default function StudentsManager() {
       {selectedStudents.length > 0 && (
         <section className="student-bulk-bar">
           <strong>{selectedStudents.length} selected</strong>
-          <button type="button" className="btn-ghost" onClick={() => exportStudents(selectedStudents)}>
+          <button type="button" className="btn-ghost" onClick={() => setExportModal({ students: selectedStudents })}>
             <Download size={16} strokeWidth={2.2} />
             Export selected
           </button>
@@ -962,7 +1028,7 @@ export default function StudentsManager() {
       <section className="student-table-card">
         <div className="student-table-head">
           <p className="card-title">Students ({visibleStudents.length}/{students.length})</p>
-          <button type="button" className="btn-ghost" onClick={() => exportStudents(visibleStudents)}>
+          <button type="button" className="btn-ghost" onClick={() => setExportModal({ students: visibleStudents })}>
             <Download size={16} strokeWidth={2.2} />
             Export view
           </button>
@@ -1129,6 +1195,17 @@ export default function StudentsManager() {
           onClose={() => setConfirmModal(null)}
           onConfirm={runConfirmAction}
           saving={busyId === confirmModal.student.id}
+        />
+      )}
+
+      {exportModal && (
+        <ExportFieldsModal
+          count={exportModal.students.length}
+          onClose={() => setExportModal(null)}
+          onExport={(fieldIds) => {
+            exportStudents(exportModal.students, fieldIds)
+            setExportModal(null)
+          }}
         />
       )}
     </div>

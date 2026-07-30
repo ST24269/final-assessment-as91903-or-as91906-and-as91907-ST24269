@@ -10,6 +10,30 @@ const { fetchStudentTimetable } = require('../utils/icsParser')
 // hardware-authenticated route the reader already calls.)
 router.use(authenticateUser, requireRole('admin'))
 
+const STUDENT_NUMBER_PATTERN = /^[0-9]{1,20}$/
+
+// Student IDs are numeric only - strips any accidental prefix like "ST" and
+// rejects the row if what's left isn't a plain number.
+function validateImportStudentNumber(value) {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) return { error: 'stNumber is required' }
+  if (!STUDENT_NUMBER_PATTERN.test(trimmed)) {
+    return { error: 'stNumber must contain numbers only (no letters or symbols)' }
+  }
+  return trimmed
+}
+
+// Year level accepts "11", "Year 11", "year11" etc, but only years 11-13.
+function validateImportYearLevel(value) {
+  if (value === null || value === undefined || value === '') return null
+  const digitsOnly = String(value).replace(/[^0-9]/g, '')
+  const parsed = Number(digitsOnly)
+  if (!digitsOnly || !Number.isInteger(parsed) || parsed < 11 || parsed > 13) {
+    return { error: 'yearLevel must be 11, 12, or 13' }
+  }
+  return parsed
+}
+
 // ---------------------------------------------------------------------
 // POST /api/onboarding/import-roster
 // Body: { rows: [{ firstName, lastName, age, yearLevel, kainga,
@@ -28,10 +52,21 @@ router.post('/import-roster', async (req, res) => {
 
   for (const row of rows) {
     const fullName = `${(row.firstName || '').trim()} ${(row.lastName || '').trim()}`.trim()
-    const stNumber = (row.stNumber || '').trim()
 
-    if (!fullName || !stNumber) {
-      results.push({ row, status: 'failed', error: 'firstName, lastName and stNumber are required' })
+    if (!fullName) {
+      results.push({ row, status: 'failed', error: 'firstName and lastName are required' })
+      continue
+    }
+
+    const validatedNumber = validateImportStudentNumber(row.stNumber)
+    if (validatedNumber?.error) {
+      results.push({ row, status: 'failed', error: validatedNumber.error })
+      continue
+    }
+
+    const validatedYear = validateImportYearLevel(row.yearLevel)
+    if (validatedYear?.error) {
+      results.push({ row, status: 'failed', error: validatedYear.error })
       continue
     }
 
@@ -41,9 +76,9 @@ router.post('/import-roster', async (req, res) => {
         .upsert(
           {
             full_name: fullName,
-            student_number: stNumber,
+            student_number: validatedNumber,
             age: row.age ? Number(row.age) : null,
-            year_level: row.yearLevel || null,
+            year_level: validatedYear,
             kainga: row.kainga || null,
             guardian_email: row.guardianEmail || null,
             ics_url: row.icsUrl || null,

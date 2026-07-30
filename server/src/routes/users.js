@@ -121,8 +121,12 @@ router.post('/create', requireRole('admin'), async (req, res) => {
     return res.status(400).json({ error: 'Student number is required for student accounts' })
   }
 
-  if (role === 'student' && parsedYearLevel !== null && (!Number.isInteger(parsedYearLevel) || parsedYearLevel < 9 || parsedYearLevel > 13)) {
-    return res.status(400).json({ error: 'year_level must be a whole number from 9 to 13' })
+  if (role === 'student' && !student_id && trimmedStudentNumber && !/^[0-9]{1,20}$/.test(trimmedStudentNumber)) {
+    return res.status(400).json({ error: 'Student number must contain numbers only (no letters or symbols)' })
+  }
+
+  if (role === 'student' && parsedYearLevel !== null && (!Number.isInteger(parsedYearLevel) || parsedYearLevel < 11 || parsedYearLevel > 13)) {
+    return res.status(400).json({ error: 'year_level must be a whole number from 11 to 13' })
   }
 
   let studentId = student_id || null

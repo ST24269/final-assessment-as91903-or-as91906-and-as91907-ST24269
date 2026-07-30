@@ -12,17 +12,17 @@
 // =======================
 // SERVER CONFIGURATION
 // =======================
-#define SERVER_URL             "http://192.168.6.202:3001"  // Your server IP and port// =======================
+#define SERVER_URL             "http://192.168.6.202:3001"  
 // READER IDENTITY
 // =======================
-// Generate a unique API key for each reader and register it in the admin panel
+// Generated a unique API key for each reader and register it in the admin panel
 #define READER_API_KEY         "GGUUZ9FNL9R3Q2QMRGNDEX8C"
 #define READER_ID              "cc3f6c24-9b71-4bda-a8fb-0508fbccd2e8"      // UUID from readers table
 
 // =======================
 // FIRMWARE INFO
 // =======================
-#define FIRMWARE_VERSION       "1.1.0"
+#define FIRMWARE_VERSION       "2.3.3"
 #define DEVICE_NAME            "Tago RFID Reader"
 
 // =======================
