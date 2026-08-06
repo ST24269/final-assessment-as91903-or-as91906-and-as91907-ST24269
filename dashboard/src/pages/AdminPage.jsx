@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   CalendarDays,
+  ClipboardCheck,
   HelpCircle,
   Link2,
   Mail,
@@ -15,10 +16,12 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import AppFooter from '../components/AppFooter'
+import NotificationBell from '../components/NotificationBell'
 import ProfileMenu from '../components/ProfileMenu'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 import StudentsManager from '../components/admin/StudentsManager'
+import SessionReviewsManager from '../components/admin/SessionReviewsManager'
 import RosterImportManager from '../components/admin/RosterImportManager'
 import ClassesManager from '../components/admin/ClassesManager'
 import ReadersManager from '../components/admin/ReadersManager'
@@ -75,6 +78,16 @@ const TABS = [
     description: 'Manage class timetable periods',
     tips: [
       'Timetable periods drive when a session is expected to be active for a class.',
+    ],
+  },
+  {
+    id: 'reviews',
+    label: 'Attendance Reviews',
+    Icon: ClipboardCheck,
+    description: "Review every class's submitted attendance",
+    tips: [
+      'A class shows up here once its teacher ends the session and confirms/submits it.',
+      'Expand a row to see each student\'s status and photo-match decision.',
     ],
   },
   {
@@ -247,6 +260,8 @@ export default function AdminPage({ session, profile }) {
           <div className="admin-topbar-actions">
             <span className="admin-live-clock">{formatClock(clock)}</span>
 
+            <NotificationBell />
+
             <div className="admin-help-menu" ref={helpRef}>
               <button
                 type="button"
@@ -324,6 +339,7 @@ export default function AdminPage({ session, profile }) {
               {tab === 'import' && <RosterImportManager />}
               {tab === 'classes' && <ClassesManager />}
               {tab === 'linking' && <StudentClassLinksManager />}
+              {tab === 'reviews' && <SessionReviewsManager />}
               {tab === 'appeals' && <AppealsManager />}
               {tab === 'timetable' && <TimetableManager />}
               {tab === 'communication' && <AdminEmailManager />}

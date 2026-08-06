@@ -75,6 +75,7 @@ app.use('/api/classes', require('./routes/classes'))
 app.use('/api/readers', require('./routes/readers'))
 app.use('/api/onboarding', require('./routes/onboarding'))
 app.use('/api/errors', require('./routes/errors'))
+app.use('/api/notifications', require('./routes/notifications'))
 
 app.use(notFoundHandler)
 app.use(errorHandler)

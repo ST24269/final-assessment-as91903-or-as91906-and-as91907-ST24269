@@ -41,7 +41,7 @@ export default function AttendanceTable({ attendance, setAttendance, loading = f
     }
 
     setUpdating(null)
-  }
+  } 
 
   const title = `Class register${attendance.length > 0 ? ` - ${attendance.length} scanned` : ''}`
 

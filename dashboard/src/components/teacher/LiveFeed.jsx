@@ -8,7 +8,7 @@ function formatTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No time'
 }
 
-export default function LiveFeed({ events = [], onEventUpdate }) {
+export default function LiveFeed({ events = [], onEventUpdate, onError }) {
   const [verifying, setVerifying] = useState(null)
   const [detailStudentId, setDetailStudentId] = useState(null)
 
@@ -17,9 +17,12 @@ export default function LiveFeed({ events = [], onEventUpdate }) {
     const data = await api.patch(`/api/attendance/${event.id}/verify`, { decision })
     setVerifying(null)
 
-    if (!data?.error && onEventUpdate) {
-      onEventUpdate(event.id, data)
+    if (data?.error) {
+      onError?.(data.error)
+      return
     }
+
+    onEventUpdate?.(event.id, data)
   }
 
   return (

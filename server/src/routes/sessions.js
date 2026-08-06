@@ -47,6 +47,20 @@ router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
 })
 
 
+// GET all submitted sessions - the admin review queue
+router.get('/submitted', requireRole('admin'), async (req, res) => {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(sessionSelect)
+    .not('submitted_at', 'is', null)
+    .order('submitted_at', { ascending: false })
+
+  if (error) return res.status(500).json({ error: error.message })
+
+  res.json(data)
+})
+
+
 // GET active session for a class
 router.get('/active/:class_id', requireRole('teacher', 'admin'), async (req, res) => {
   const { data, error } = await supabase
@@ -255,6 +269,64 @@ router.patch('/:id/end', requireRole('teacher', 'admin'), async (req, res) => {
     })
   }
 
+
+  res.json(data)
+})
+
+
+// PATCH submit a session's attendance for admin review
+// Must be ended first - submitting is a separate, explicit "this is final"
+// step from ending, so a teacher can review the roll before sending it on.
+router.patch('/:id/submit', requireRole('teacher', 'admin'), async (req, res) => {
+
+  const { data: session, error: sessionError } = await supabase
+    .from('sessions')
+    .select(sessionSelect)
+    .eq('id', req.params.id)
+    .single()
+
+  if (sessionError || !session) {
+    return res.status(404).json({
+      error: 'Session not found'
+    })
+  }
+
+  if (!session.ended_at) {
+    return res.status(409).json({
+      error: 'End the session before submitting attendance.'
+    })
+  }
+
+  if (session.submitted_at) {
+    return res.json(session)
+  }
+
+  const { data, error } = await supabase
+    .from('sessions')
+    .update({ submitted_at: new Date().toISOString() })
+    .eq('id', req.params.id)
+    .select(sessionSelect)
+    .single()
+
+  if (error) {
+    return res.status(500).json({
+      error: error.message
+    })
+  }
+
+  // Notify every admin. Failure to notify shouldn't fail the submission
+  // itself, so this is best-effort.
+  try {
+    await supabase.from('notifications').insert([{
+      recipient_role: 'admin',
+      type: 'info',
+      title: 'Attendance submitted',
+      message: `${data.classes?.name || 'A class'} attendance was submitted by ${req.profile.full_name || 'a teacher'} for review.`,
+      session_id: data.id,
+    }])
+  } catch (notifyError) {
+    console.error('Failed to create submission notification:', notifyError)
+  }
 
   res.json(data)
 })

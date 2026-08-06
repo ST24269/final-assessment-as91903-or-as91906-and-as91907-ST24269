@@ -1014,6 +1014,62 @@ router.get(
 
 
 
+// PATCH photo-verification decision (the live feed's Match / No Match buttons)
+router.patch(
+  '/:id/verify',
+  requireRole('teacher', 'admin'),
+  async (req, res) => {
+
+    const { decision } = req.body
+
+    if (decision !== null && !['match', 'no_match'].includes(decision)) {
+      return res.status(400).json({
+        error: 'decision must be "match", "no_match", or null'
+      })
+    }
+
+    const {
+      data: existing,
+      error: existingError
+    } = await supabase
+      .from('attendance')
+      .select('id, session_id')
+      .eq('id', req.params.id)
+      .single()
+
+    if (existingError || !existing) {
+      return res.status(404).json({
+        error: 'Attendance record not found'
+      })
+    }
+
+    const access = await getSessionAccess(req, existing.session_id)
+
+    if (!access.allowed) {
+      return res.status(access.status).json({
+        error: access.error
+      })
+    }
+
+    const { data, error } = await supabase
+      .from('attendance')
+      .update({ photo_verified: decision })
+      .eq('id', req.params.id)
+      .select()
+      .single()
+
+    if (error) {
+      return res.status(500).json({
+        error: error.message
+      })
+    }
+
+    res.json(data)
+  }
+)
+
+
+
 router.patch(
   '/:id',
   requireRole('teacher', 'admin'),
