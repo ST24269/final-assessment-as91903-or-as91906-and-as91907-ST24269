@@ -11,6 +11,7 @@ const { fetchStudentTimetable } = require('../utils/icsParser')
 router.use(authenticateUser, requireRole('admin'))
 
 const STUDENT_NUMBER_PATTERN = /^[0-9]{1,20}$/
+const MAX_IMPORT_NAME_LENGTH = 15
 
 // Student IDs are numeric only - strips any accidental prefix like "ST" and
 // rejects the row if what's left isn't a plain number.
@@ -21,6 +22,16 @@ function validateImportStudentNumber(value) {
     return { error: 'stNumber must contain numbers only (no letters or symbols)' }
   }
   return trimmed
+}
+
+// First/last names are capped at 15 characters, matching the limit
+// enforced on the admin add/edit student form.
+function validateImportNamePart(value, label) {
+  const trimmed = String(value || '').trim()
+  if (trimmed.length > MAX_IMPORT_NAME_LENGTH) {
+    return { error: `${label} must be ${MAX_IMPORT_NAME_LENGTH} characters or fewer (got ${trimmed.length})` }
+  }
+  return null
 }
 
 // Year level accepts "11", "Year 11", "year11" etc, but only years 11-13.
@@ -55,6 +66,18 @@ router.post('/import-roster', async (req, res) => {
 
     if (!fullName) {
       results.push({ row, status: 'failed', error: 'firstName and lastName are required' })
+      continue
+    }
+
+    const firstNameError = validateImportNamePart(row.firstName, 'firstName')
+    if (firstNameError) {
+      results.push({ row, status: 'failed', error: firstNameError.error })
+      continue
+    }
+
+    const lastNameError = validateImportNamePart(row.lastName, 'lastName')
+    if (lastNameError) {
+      results.push({ row, status: 'failed', error: lastNameError.error })
       continue
     }
 

@@ -100,6 +100,9 @@ function validateRow(row) {
 
   if (!String(row.firstName || '').trim() || !String(row.lastName || '').trim()) {
     errors.push('Missing first or last name')
+  } else {
+    if (String(row.firstName).trim().length > 15) errors.push('First name over 15 characters')
+    if (String(row.lastName).trim().length > 15) errors.push('Last name over 15 characters')
   }
 
   const stNumber = String(row.stNumber || '').trim()

@@ -6,6 +6,8 @@ import TeacherLoginPage from './pages/TeacherLoginPage'
 import StudentLoginPage from './pages/StudentLoginPage'
 import TeacherDashboardPage from './pages/TeacherDashboardPage'
 import TeacherSessionPage from './pages/TeacherSessionPage'
+import ManualRollPage from './pages/ManualRollPage'
+import StudentSearchPage from './pages/StudentSearchPage'
 import TeacherAppealsPage from './pages/TeacherAppealsPage'
 import StudentPage from './pages/StudentPage'
 import StudentAppealsPage from './pages/StudentAppealsPage'
@@ -423,6 +425,28 @@ export default function App() {
     </ProtectedRoute>
   }
 />
+<Route
+  path="/teacher/manual-roll"
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <ManualRollPage
+        session={session}
+        profile={profile}
+      />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/teacher/students"
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <StudentSearchPage
+        session={session}
+        profile={profile}
+      />
+    </ProtectedRoute>
+  }
+/>
 
         <Route
           path="/teacher/appeals"
@@ -456,6 +480,15 @@ export default function App() {
           element={
             <ProtectedRoute session={session} profile={profile} role="admin">
               <AdminPage session={session} profile={profile} />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/students"
+          element={
+            <ProtectedRoute session={session} profile={profile} role="admin">
+              <StudentSearchPage session={session} profile={profile} />
             </ProtectedRoute>
           }
         />

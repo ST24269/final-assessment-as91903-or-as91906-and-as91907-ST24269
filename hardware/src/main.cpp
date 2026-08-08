@@ -13,6 +13,9 @@
  *
  *   Buzzer +       -> GPIO4
  *   Buzzer -       -> GND
+ *
+ *   Blue LED +     -> GPIO5 -> 220ohm resistor -> LED anode
+ *   Blue LED -     -> GND
  */
 
 #include <Arduino.h>
@@ -49,18 +52,29 @@ const uint8_t ALERT_TAP_THRESHOLD = 3;
 bool sessionKnownActive = false;
 
 // =======================
-// BUZZER FEEDBACK
+// BUZZER + LED FEEDBACK
 // =======================
+// The blue LED is driven in lock-step with the buzzer inside beep(), so
+// every existing feedback pattern (beepSuccess, beepUnknownCard,
+// beepNotEnrolled, etc.) automatically gets a matching visual flash with
+// zero changes needed at each call site.
 
 void initBuzzer() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 }
 
+void initLed() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+}
+
 void beep(int duration) {
   digitalWrite(BUZZER_PIN, HIGH);
+  digitalWrite(LED_PIN, HIGH);
   delay(duration);
   digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
 }
 
 // Fires immediately on power-on, before WiFi/RFID/storage init - confirms
@@ -195,6 +209,9 @@ void processScan(const String& uidString, const String& timestamp) {
       Serial.println("No active session - not caching, ready for next tap");
       beepNoSession();
       sessionKnownActive = false;
+      // No class running, so nothing to mark - but the tap isn't wasted,
+      // just look the card up and print who it belongs to instead.
+      network->sendCardLookup(uidString);
       break;
 
     case ScanResult::NOT_ENROLLED:
@@ -220,6 +237,7 @@ void setup() {
   delay(1500);
 
   initBuzzer();
+  initLed();
   beepPoweredOn();
 
   Serial.println();

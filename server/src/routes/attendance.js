@@ -474,6 +474,75 @@ router.post('/scan', async (req, res) => {
 })
 
 
+// Added this because taps with no session running were just dead-ending
+// in "No active session" with nothing useful. Same reader auth as /scan,
+// but skips the session check entirely - it's read-only, so there's no
+// harm in it working any time. Frontend "scan a card" search box hits a
+// different route (needs a logged-in teacher/admin), this one is for the
+// classroom reader itself.
+router.post('/lookup', async (req, res) => {
+  const { rfid_card_uid, reader_api_key } = req.body
+
+  const normalizedUid = rfid_card_uid ? normalizeCardUid(rfid_card_uid) : ''
+  const readerApiKey = reader_api_key ? String(reader_api_key).trim() : ''
+
+  if (!normalizedUid || !readerApiKey) {
+    return res.status(400).json({ error: 'rfid_card_uid and reader_api_key are required' })
+  }
+
+  // Same reader check as /scan - don't want randoms hitting this without
+  // a valid reader key even though it's just a lookup.
+  const { data: reader, error: readerError } = await supabase
+    .from('readers')
+    .select('id')
+    .eq('api_key', readerApiKey)
+    .eq('active', true)
+    .maybeSingle()
+
+  if (readerError || !reader) {
+    return res.status(401).json({ error: 'Invalid or inactive reader' })
+  }
+
+  const { data: student, error: studentError } = await supabase
+    .from('students')
+    .select('id, full_name, student_number, year_level, kainga, la_teacher_id')
+    .eq('rfid_card_uid', normalizedUid)
+    .maybeSingle()
+
+  if (studentError) return res.status(500).json({ error: studentError.message })
+  if (!student) return res.status(404).json({ error: 'Card not registered to any student' })
+
+  // LA teacher name - not critical if this fails, just leave it blank
+  let laTeacherName = ''
+  if (student.la_teacher_id) {
+    const { data: teacher } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', student.la_teacher_id)
+      .maybeSingle()
+    laTeacherName = teacher?.full_name || ''
+  }
+
+  const { data: enrolments } = await supabase
+    .from('enrolments')
+    .select('classes(name, subject, room)')
+    .eq('student_id', student.id)
+
+  const classes = (enrolments || [])
+    .map((row) => row.classes)
+    .filter(Boolean)
+
+  res.json({
+    full_name: student.full_name,
+    student_number: student.student_number,
+    year_level: student.year_level,
+    kainga: student.kainga,
+    la_teacher_name: laTeacherName,
+    classes,
+  })
+})
+
+
 // POST /api/attendance/bulk-upload
 // Upload cached offline scans from ESP32
 router.post('/bulk-upload', async (req, res) => {
@@ -863,6 +932,94 @@ router.get(
 
 
 router.use(authenticateUser)
+
+
+
+// POST manual roll for a session - the Manual Roll backup page's "Save"
+// button. Upserts one attendance row per student in the payload (insert if
+// this student has no row yet for this session, update their status if
+// they do - e.g. an RFID scan already marked them and the teacher is just
+// correcting it by hand). Every row is flagged source: 'manual' and
+// manual_override: true so it's clearly distinguishable from a scan.
+router.post(
+  '/manual/:session_id',
+  requireRole('teacher', 'admin'),
+  async (req, res) => {
+
+    const records = Array.isArray(req.body.records) ? req.body.records : []
+
+    if (!records.length) {
+      return res.status(400).json({ error: 'records is required and must be a non-empty array' })
+    }
+
+    const VALID_STATUSES = ['present', 'late', 'absent', 'excused']
+    for (const record of records) {
+      if (!record.student_id || !VALID_STATUSES.includes(record.status)) {
+        return res.status(400).json({
+          error: 'Each record needs a student_id and a valid status (present, late, absent, excused)',
+        })
+      }
+    }
+
+    const access = await getSessionAccess(req, req.params.session_id)
+
+    if (!access.allowed) {
+      return res.status(access.status).json({ error: access.error })
+    }
+
+    // Only students actually enrolled in this session's class can be
+    // marked, same rule the RFID scan path already enforces.
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id, class_id')
+      .eq('id', req.params.session_id)
+      .single()
+
+    if (sessionError || !session) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    const { data: enrolments, error: enrolmentError } = await supabase
+      .from('enrolments')
+      .select('student_id')
+      .eq('class_id', session.class_id)
+      .in('student_id', records.map((record) => record.student_id))
+
+    if (enrolmentError) {
+      return res.status(500).json({ error: enrolmentError.message })
+    }
+
+    const enrolledIds = new Set((enrolments || []).map((row) => row.student_id))
+    const notEnrolled = records.filter((record) => !enrolledIds.has(record.student_id))
+
+    if (notEnrolled.length) {
+      return res.status(409).json({
+        error: `${notEnrolled.length} student(s) in this submission are not enrolled in this class.`,
+      })
+    }
+
+    const now = new Date().toISOString()
+    const rows = records.map((record) => ({
+      session_id: req.params.session_id,
+      student_id: record.student_id,
+      status: record.status,
+      scanned_at: now,
+      source: 'manual',
+      manual_override: true,
+    }))
+
+    const { data, error } = await supabase
+      .from('attendance')
+      .upsert(rows, { onConflict: 'session_id,student_id' })
+      .select()
+
+    if (error) {
+      return res.status(500).json({ error: error.message })
+    }
+
+    res.json(data)
+  }
+)
 
 
 

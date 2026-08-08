@@ -84,15 +84,15 @@ router.get('/active/:class_id', requireRole('teacher', 'admin'), async (req, res
 })
 
 
-// POST start a session
 router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
 
   const {
     class_id,
     notes,
     reader_id: providedReaderId,
-    // Not yet persisted - see note below on why this isn't inserted yet.
     covering_for_teacher_id,
+
+    manual,
   } = req.body
 
   if (!class_id) {
@@ -114,14 +114,11 @@ router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
     })
   }
 
-  // Resolve the reader for this session. If the caller explicitly supplied
-  // one, use it (still validated below). Otherwise - the normal case, since
-  // nothing in the UI currently collects a reader_id - match a reader to
-  // this class automatically by room, the same way attendance.js already
-  // matches an incoming scan to a session by room.
   let readerRecord = null
 
-  if (providedReaderId) {
+  if (manual) {
+    readerRecord = null
+  } else if (providedReaderId) {
     const { data, error } = await supabase
       .from('readers')
       .select('id, room')
@@ -183,36 +180,35 @@ router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
     })
   }
 
-  // Prevent duplicate reader sessions
-  const { data: existingReaderSession } = await supabase
-    .from('sessions')
-    .select(sessionSelect)
-    .eq('reader_id', readerRecord.id)
-    .is('ended_at', null)
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Prevent duplicate reader sessions (not applicable to manual sessions -
+  // there's no reader to collide on).
+  if (readerRecord) {
+    const { data: existingReaderSession } = await supabase
+      .from('sessions')
+      .select(sessionSelect)
+      .eq('reader_id', readerRecord.id)
+      .is('ended_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  if (existingReaderSession) {
-    return res.status(409).json({
-      error: 'A session is already active on this reader',
-      active_session: existingReaderSession
-    })
+    if (existingReaderSession) {
+      return res.status(409).json({
+        error: 'A session is already active on this reader',
+        active_session: existingReaderSession
+      })
+    }
   }
 
-  // NOTE: `covering_for_teacher_id` is accepted above but intentionally not
-  // written to the sessions table yet - this schema's `sessions` table
-  // (per sessionSelect) only has class_id/teacher_id/reader_id/notes, no
-  // column to record who covered the class. If you want that tracked,
-  // add a `covering_for_teacher_id` column to `sessions` and uncomment
-  // the line below.
+
   const { data, error } = await supabase
     .from('sessions')
     .insert([
       {
         class_id,
         teacher_id: req.profile.id,
-        reader_id: readerRecord.id,
+        reader_id: readerRecord?.id || null,
+        is_manual: !!manual,
         notes,
         // covering_for_teacher_id: covering_for_teacher_id || null,
       }
@@ -275,8 +271,6 @@ router.patch('/:id/end', requireRole('teacher', 'admin'), async (req, res) => {
 
 
 // PATCH submit a session's attendance for admin review
-// Must be ended first - submitting is a separate, explicit "this is final"
-// step from ending, so a teacher can review the roll before sending it on.
 router.patch('/:id/submit', requireRole('teacher', 'admin'), async (req, res) => {
 
   const { data: session, error: sessionError } = await supabase
@@ -314,8 +308,6 @@ router.patch('/:id/submit', requireRole('teacher', 'admin'), async (req, res) =>
     })
   }
 
-  // Notify every admin. Failure to notify shouldn't fail the submission
-  // itself, so this is best-effort.
   try {
     await supabase.from('notifications').insert([{
       recipient_role: 'admin',

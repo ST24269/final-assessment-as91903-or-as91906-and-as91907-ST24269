@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowUpRight, Users } from 'lucide-react'
+import { ArrowUpRight, ClipboardList, Users } from 'lucide-react'
 
 import { api } from '../api/client'
 import SessionPanel from '../components/teacher/SessionPanel'
@@ -202,6 +202,44 @@ export default function TeacherDashboardPage({ session, profile }) {
         <SessionPanel />
 
 
+
+        <Card
+          title="Looking for a student?"
+          action={
+            <Link
+              className="btn-ghost"
+              to="/teacher/students"
+            >
+              <Users size={14}/>
+              Search students
+              <ArrowUpRight size={14}/>
+            </Link>
+          }
+        >
+          <p className="table-helper-text">
+            Search any student by name, ID, kainga or LA teacher, or scan their card, to see
+            their full profile and timetable.
+          </p>
+        </Card>
+
+        <Card
+          title="Reader down, or a card not working?"
+          action={
+            <Link
+              className="btn-ghost"
+              to="/teacher/manual-roll"
+            >
+              <ClipboardList size={14}/>
+              Take a manual roll
+              <ArrowUpRight size={14}/>
+            </Link>
+          }
+        >
+          <p className="table-helper-text">
+            Take attendance by hand from the class roster and submit it to admin
+            the same way as a normal session - no RFID reader required.
+          </p>
+        </Card>
 
         <Card
           title="Covering another class?"

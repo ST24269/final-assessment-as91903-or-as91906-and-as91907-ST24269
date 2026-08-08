@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarDays,
   ClipboardCheck,
+  CreditCard,
   HelpCircle,
   Link2,
   Mail,
@@ -259,6 +260,11 @@ export default function AdminPage({ session, profile }) {
 
           <div className="admin-topbar-actions">
             <span className="admin-live-clock">{formatClock(clock)}</span>
+
+            <Link to="/admin/students" className="btn-ghost admin-card-lookup-link">
+              <CreditCard size={16} strokeWidth={2.2} />
+              Card lookup
+            </Link>
 
             <NotificationBell />
 

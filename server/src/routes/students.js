@@ -45,10 +45,20 @@ function splitName(fullName = '') {
   }
 }
 
+const MAX_NAME_LENGTH = 15
+
 function buildFullName({ first_name, last_name, full_name }) {
   const explicitName = String(full_name || '').trim()
   if (explicitName) return explicitName
   return [first_name, last_name].map((part) => String(part || '').trim()).filter(Boolean).join(' ')
+}
+
+function validateNamePart(value, label) {
+  const trimmed = String(value || '').trim()
+  if (trimmed.length > MAX_NAME_LENGTH) {
+    return { error: `${label} must be ${MAX_NAME_LENGTH} characters or fewer (got ${trimmed.length}).` }
+  }
+  return null
 }
 
 function formatClassLabel(classRecord) {
@@ -403,6 +413,25 @@ async function getEnrichedStudent(id) {
   return student
 }
 
+// Full profile (classes, LA teacher, attendance summary) plus the weekly
+// timetable, in one shape - used by both the "click a student" detail
+// panel and the "scan a card" lookup, so they always show the same thing.
+async function getStudentDetailWithTimetable(id) {
+  const student = await getEnrichedStudent(id)
+  if (!student) return null
+
+  const { data: timetable, error: timetableError } = await supabase
+    .from('timetable_slots')
+    .select('*')
+    .eq('student_id', id)
+    .order('day_of_week')
+    .order('start_time')
+
+  if (timetableError) throw new Error(timetableError.message)
+
+  return { ...student, timetable: timetable || [] }
+}
+
 async function buildStudentPayload(body, { includeRfid = true, defaultStatus = 'active' } = {}) {
   const extended = await supportsExtendedStudentColumns()
   const fullName = buildFullName(body)
@@ -412,6 +441,16 @@ async function buildStudentPayload(body, { includeRfid = true, defaultStatus = '
   if (!fullName) return { error: 'Student first and last name are required.' }
   if (validatedNumber?.error) return { error: validatedNumber.error }
   if (parsedYearLevel?.error) return { error: parsedYearLevel.error }
+
+  const { firstName: splitFirstName, lastName: splitLastName } = splitName(fullName)
+  const firstNamePart = body.first_name ?? splitFirstName
+  const lastNamePart = body.last_name ?? splitLastName
+
+  const firstNameError = validateNamePart(firstNamePart, 'First name')
+  if (firstNameError) return firstNameError
+
+  const lastNameError = validateNamePart(lastNamePart, 'Last name')
+  if (lastNameError) return lastNameError
 
   const payload = {
     full_name: fullName,
@@ -970,23 +1009,94 @@ router.get('/', requireRole('teacher', 'admin'), async (req, res) => {
   }
 })
 
+// GET the roster (name, photo, LA teacher) for one class, for the teacher's
+// Manual Roll backup page. Deliberately lighter than enrichStudents() above -
+// this only needs to render one row per enrolled student, not the full
+// admin student-management payload.
+router.get('/roster/:classId', requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const { data: enrolled, error: enrolmentError } = await supabase
+      .from('enrolments')
+      .select('student_id')
+      .eq('class_id', req.params.classId)
+
+    if (enrolmentError) throw new Error(enrolmentError.message)
+
+    const studentIds = [...new Set((enrolled || []).map((row) => row.student_id))]
+    if (!studentIds.length) return res.json([])
+
+    const extended = await supportsExtendedStudentColumns()
+    const { data: students, error: studentsError } = await supabase
+      .from('students')
+      .select(extended ? EXTENDED_STUDENT_COLUMNS : BASE_STUDENT_COLUMNS)
+      .in('id', studentIds)
+      .order('full_name')
+
+    if (studentsError) throw new Error(studentsError.message)
+
+    const laTeacherIds = extended
+      ? [...new Set((students || []).map((student) => student.la_teacher_id).filter(Boolean))]
+      : []
+
+    let laTeachersById = new Map()
+    if (laTeacherIds.length) {
+      const { data: laTeachers, error: laTeacherError } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', laTeacherIds)
+
+      if (laTeacherError) throw new Error(laTeacherError.message)
+      laTeachersById = new Map((laTeachers || []).map((teacher) => [teacher.id, teacher]))
+    }
+
+    res.json((students || []).map((student) => ({
+      id: student.id,
+      full_name: student.full_name,
+      student_number: student.student_number,
+      year_level: student.year_level,
+      photo_url: student.photo_url || null,
+      la_teacher_name: student.la_teacher_id ? (laTeachersById.get(student.la_teacher_id)?.full_name || '') : '',
+    })))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 // Full student detail for the teacher/admin click-to-expand panel:
 // enrolled classes, LA teacher, and weekly timetable slots.
 router.get('/:id/detail', requireRole('teacher', 'admin'), async (req, res) => {
   try {
-    const student = await getEnrichedStudent(req.params.id)
+    const student = await getStudentDetailWithTimetable(req.params.id)
     if (!student) return res.status(404).json({ error: 'Student not found' })
+    res.json(student)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
 
-    const { data: timetable, error: timetableError } = await supabase
-      .from('timetable_slots')
-      .select('*')
-      .eq('student_id', req.params.id)
-      .order('day_of_week')
-      .order('start_time')
+// GET a student's full profile by scanning/typing their RFID card UID -
+// the "find a student by their card" lookup for teachers and admin. Most
+// desk RFID readers act as a keyboard (type the UID, then Enter), so the
+// frontend just needs a text input; this resolves that UID straight to a
+// full profile without going through an attendance session at all.
+router.get('/by-card/:uid', requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const uid = normalizeCardUid(req.params.uid)
 
-    if (timetableError) throw new Error(timetableError.message)
+    const { data: match, error: matchError } = await supabase
+      .from('students')
+      .select('id')
+      .eq('rfid_card_uid', uid)
+      .maybeSingle()
 
-    res.json({ ...student, timetable: timetable || [] })
+    if (matchError) throw new Error(matchError.message)
+    if (!match) {
+      return res.status(404).json({ error: 'No student is linked to that card.' })
+    }
+
+    const student = await getStudentDetailWithTimetable(match.id)
+    if (!student) return res.status(404).json({ error: 'Student not found' })
+    res.json(student)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

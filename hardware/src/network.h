@@ -330,6 +330,75 @@ public:
     return false;
   }
 
+  // Called when a tap comes back NO_SESSION - since there's no class
+  // running, we can't mark attendance, but we can still say who tapped.
+  // Prints straight to Serial since this board has no screen. Returns
+  // false on any failure - main.cpp just falls back to the normal
+  // "no session" beep in that case.
+  bool sendCardLookup(const String& uid) {
+    if (!isWiFiConnected()) return false;
+
+    HTTPClient http;
+    String url = String(serverUrl) + "/api/attendance/lookup";
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(8000);
+
+    StaticJsonDocument<256> doc;
+    doc["rfid_card_uid"] = uid;
+    doc["reader_api_key"] = readerApiKey;
+
+    String body;
+    serializeJson(doc, body);
+
+    int httpCode = http.POST(body);
+    String response = http.getString();
+    http.end();
+
+    if (httpCode != 200) {
+      Serial.printf("Lookup failed: HTTP %d - %s\n", httpCode, response.c_str());
+      return false;
+    }
+
+    // 1024 should be plenty for a student + their class list, bump this
+    // up if a student ever ends up enrolled in a ton of classes.
+    StaticJsonDocument<1024> respDoc;
+    if (deserializeJson(respDoc, response)) {
+      Serial.println("Lookup response didn't parse as JSON");
+      return false;
+    }
+
+    Serial.println("---- CARD LOOKUP ----");
+    Serial.printf("Name:       %s\n", respDoc["full_name"] | "Unknown");
+    Serial.printf("Student ID: %s\n", respDoc["student_number"] | "-");
+
+    if (respDoc["year_level"].is<int>()) {
+      Serial.printf("Year:       %d\n", respDoc["year_level"].as<int>());
+    } else {
+      Serial.println("Year:       -");
+    }
+
+    Serial.printf("Kainga:     %s\n", respDoc["kainga"] | "-");
+    Serial.printf("LA teacher: %s\n", respDoc["la_teacher_name"] | "-");
+
+    if (respDoc["classes"].is<JsonArray>()) {
+      JsonArray classes = respDoc["classes"].as<JsonArray>();
+      Serial.printf("Classes (%d):\n", classes.size());
+      for (JsonObject classItem : classes) {
+        const char* room = classItem["room"] | "";
+        if (strlen(room) > 0) {
+          Serial.printf("  - %s (%s), Room %s\n", classItem["name"] | "Class", classItem["subject"] | "Subject", room);
+        } else {
+          Serial.printf("  - %s (%s)\n", classItem["name"] | "Class", classItem["subject"] | "Subject");
+        }
+      }
+    }
+    Serial.println("----------------------");
+
+    return true;
+  }
+
   unsigned long getBackoffDelay() { return currentBackoff; }
   bool hasPendingHeartbeat() { return heartbeatPending; }
   int getSignalStrength() { return WiFi.RSSI(); }

@@ -145,11 +145,21 @@ function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, sa
         <form className="student-form-grid" onSubmit={onSubmit}>
           <div className="login-field">
             <label htmlFor="student-first-name">First name</label>
-            <input id="student-first-name" value={form.first_name} onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))} />
+            <input
+              id="student-first-name"
+              value={form.first_name}
+              maxLength={15}
+              onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value.slice(0, 15) }))}
+            />
           </div>
           <div className="login-field">
             <label htmlFor="student-last-name">Last name</label>
-            <input id="student-last-name" value={form.last_name} onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value }))} />
+            <input
+              id="student-last-name"
+              value={form.last_name}
+              maxLength={15}
+              onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value.slice(0, 15) }))}
+            />
           </div>
           <div className="login-field">
             <label htmlFor="student-email">Email</label>
