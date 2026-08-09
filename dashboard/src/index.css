@@ -6794,3 +6794,48 @@ textarea::placeholder {
 .status-pill-late { background: var(--amber-soft); color: var(--amber); }
 .status-pill-absent { background: var(--red-soft); color: var(--red); }
 .status-pill-excused { background: var(--blue-soft); color: var(--blue); }
+/* Manual Roll (backup attendance) + Student Search / card lookup */
+
+.manual-roll-unmarked-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+}
+
+tr.is-unmarked td {
+  background: color-mix(in srgb, var(--amber, #d97706) 6%, transparent);
+}
+
+.manual-roll-photo-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.manual-roll-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.manual-roll-name-btn:hover,
+.manual-roll-photo-btn:hover {
+  opacity: 0.8;
+}
+
+.admin-card-lookup-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
