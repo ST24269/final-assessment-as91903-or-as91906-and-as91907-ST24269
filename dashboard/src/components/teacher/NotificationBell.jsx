@@ -3,7 +3,12 @@ import { Bell } from 'lucide-react'
 import { supabase } from '../../api/client'
 import ScanIssuesAlert from './ScanIssuesAlert'
 
-const SCAN_ISSUE_RESULTS = ['invalid_card', 'not_enrolled']
+// 'reader_inactive' included so a disabled/misconfigured reader shows up
+// here too, not just in the ESP32's own logs. 'lookup' deliberately isn't
+// in this list - a card lookup with no session is a normal action, not an
+// issue, and it's already surfaced live via StudentSearchPage's own
+// listener rather than the issues bell.
+const SCAN_ISSUE_RESULTS = ['invalid_card', 'not_enrolled', 'reader_inactive']
 
 export default function NotificationBell() {
   const [scanIssues, setScanIssues] = useState([])
@@ -78,7 +83,7 @@ export default function NotificationBell() {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <Bell size={18} strokeWidth={2.2} />
+        <Bell size={22} strokeWidth={2.2} />
         {visibleScanIssues.length > 0 && (
           <span className="notification-bell-badge">
             {visibleScanIssues.length > 9 ? '9+' : visibleScanIssues.length}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, CreditCard, Search } from 'lucide-react'
-import { api } from '../api/client'
+import { api, supabase } from '../api/client'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 import ProfileMenu from '../components/ProfileMenu'
@@ -43,6 +43,30 @@ export default function StudentSearchPage({ session, profile }) {
     scanInputRef.current?.focus()
 
     return () => { cancelled = true }
+  }, [])
+
+  // Live "someone just tapped their card on a classroom reader with no
+  // session running" listener. The physical reader hits POST
+  // /api/attendance/lookup, which now writes a scan_logs row with
+  // result: 'lookup' (previously this only ever printed to the ESP32's
+  // own Serial monitor, so the dashboard had no way to react to it).
+  // Auto-open that student's profile the moment the row lands.
+  useEffect(() => {
+    if (!supabase) return undefined
+
+    const channel = supabase
+      .channel('student-search-card-lookups')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'scan_logs' },
+        (payload) => {
+          if (payload.new?.result !== 'lookup' || !payload.new?.student_id) return
+          setDetailStudentId(payload.new.student_id)
+        }
+      )
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
   }, [])
 
   const results = useMemo(() => {

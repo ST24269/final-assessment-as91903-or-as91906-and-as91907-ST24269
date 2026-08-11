@@ -8,6 +8,7 @@ import TeacherDashboardPage from './pages/TeacherDashboardPage'
 import TeacherSessionPage from './pages/TeacherSessionPage'
 import ManualRollPage from './pages/ManualRollPage'
 import StudentSearchPage from './pages/StudentSearchPage'
+import TeacherAnalyticsPage from './pages/TeacherAnalyticsPage'
 import TeacherAppealsPage from './pages/TeacherAppealsPage'
 import StudentPage from './pages/StudentPage'
 import StudentAppealsPage from './pages/StudentAppealsPage'
@@ -441,6 +442,17 @@ export default function App() {
   element={
     <ProtectedRoute session={session} profile={profile} role="teacher">
       <StudentSearchPage
+        session={session}
+        profile={profile}
+      />
+    </ProtectedRoute>
+  }
+/>
+<Route
+  path="/teacher/analytics"
+  element={
+    <ProtectedRoute session={session} profile={profile} role="teacher">
+      <TeacherAnalyticsPage
         session={session}
         profile={profile}
       />

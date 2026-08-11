@@ -1472,6 +1472,50 @@ textarea::placeholder {
   color: var(--text);
 }
 
+.teacher-quick-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+}
+
+.teacher-quick-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.1rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  text-decoration: none;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.teacher-quick-menu-item:hover {
+  border-color: var(--primary);
+  background: var(--surface-soft);
+  transform: translateY(-1px);
+}
+
+.teacher-quick-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft, var(--surface-soft));
+  color: var(--primary);
+}
+
+.teacher-quick-menu-item strong { color: var(--text); font-size: 0.86rem; font-weight: 700; }
+
+.analytics-class-tile { width: 100%; cursor: pointer; text-align: left; border: none; }
+.analytics-class-tile.is-active { border-left-color: var(--primary); background: var(--surface-soft); }
+
 .admin-workspace {
   grid-column: 2;
   grid-row: 1 / -1;
@@ -6475,9 +6519,9 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   background: transparent;
   border: 1px solid var(--line);
   color: var(--text-muted);
@@ -6838,4 +6882,4 @@ tr.is-unmarked td {
   align-items: center;
   gap: 0.4rem;
   white-space: nowrap;
-} 
+}

@@ -136,6 +136,8 @@ export default function AccountPage({ session, profile, section = 'profile', set
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [password, setPassword] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
+  const [bufferMinutes, setBufferMinutes] = useState(profile?.session_start_buffer_minutes ?? 10)
+  const [savingBuffer, setSavingBuffer] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
   const [accountData, setAccountData] = useState({
     loading: true,
@@ -289,6 +291,38 @@ export default function AccountPage({ session, profile, section = 'profile', set
 
     setProfile?.(data.profile)
     setActionNotice('profile', 'success', 'Profile updated.')
+  }
+
+  const handleBufferSubmit = async (event) => {
+    event.preventDefault()
+    const buffer = Number(bufferMinutes)
+
+    if (!Number.isInteger(buffer) || buffer < 0 || buffer > 60) {
+      setActionNotice('settings', 'error', 'Buffer must be a whole number of minutes from 0 to 60.')
+      return
+    }
+
+    setSavingBuffer(true)
+    setActionNotice('settings', null, null)
+
+    // PATCH /api/users/me always requires full_name - send the profile's
+    // current saved name rather than whatever is sitting in the (separate)
+    // name field above, so this form can't accidentally overwrite an
+    // unsaved edit there.
+    const data = await api.patch('/api/users/me', {
+      full_name: profile?.full_name || fullName,
+      session_start_buffer_minutes: buffer,
+    })
+
+    setSavingBuffer(false)
+
+    if (data?.error) {
+      setActionNotice('settings', 'error', data.error)
+      return
+    }
+
+    setProfile?.(data.profile)
+    setActionNotice('settings', 'success', 'Session start buffer updated.')
   }
 
   const handlePasswordSubmit = async (event) => {
@@ -772,6 +806,34 @@ export default function AccountPage({ session, profile, section = 'profile', set
               </button>
             </div>
           </Card>
+
+          {profile?.role === 'teacher' && (
+            <Card title="Session start buffer">
+              <p className="table-helper-text">
+                How many minutes before or after a class's scheduled start/end time you're
+                allowed to start its session. Starting outside this window is blocked.
+              </p>
+              <form className="account-form" onSubmit={handleBufferSubmit}>
+                <div className="login-field">
+                  <label htmlFor="session-buffer">Buffer (minutes, 0-60)</label>
+                  <input
+                    id="session-buffer"
+                    type="number"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={bufferMinutes}
+                    onChange={(event) => setBufferMinutes(event.target.value)}
+                  />
+                </div>
+                <div className="account-action-row">
+                  <button type="submit" disabled={savingBuffer}>
+                    {savingBuffer ? 'Saving...' : 'Save buffer'}
+                  </button>
+                </div>
+              </form>
+            </Card>
+          )}
         </div>
       </section>
     </Layout>
