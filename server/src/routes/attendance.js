@@ -315,7 +315,8 @@ router.post('/scan', async (req, res) => {
       scannedAt,
       'no_session',
       Date.now() - startTime,
-      'No active session for reader'
+      'No active session for reader',
+      { studentId: student.id }
     )
 
 
@@ -510,7 +511,17 @@ router.post('/lookup', async (req, res) => {
     .maybeSingle()
 
   if (studentError) return res.status(500).json({ error: studentError.message })
-  if (!student) return res.status(404).json({ error: 'Card not registered to any student' })
+
+  if (!student) {
+    await logScan(reader.id, normalizedUid, new Date(), 'invalid_card', null, 'Unrecognised card tapped for lookup')
+    return res.status(404).json({ error: 'Card not registered to any student' })
+  }
+
+  // Write this to scan_logs (result: 'lookup') purely so the dashboard can
+  // react to it live via Realtime - StudentSearchPage listens for this to
+  // auto-pull up the student's profile the moment a card is tapped on a
+  // classroom reader, even with no session running.
+  await logScan(reader.id, normalizedUid, new Date(), 'lookup', null, null, { studentId: student.id })
 
   // LA teacher name - not critical if this fails, just leave it blank
   let laTeacherName = ''

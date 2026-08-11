@@ -16,46 +16,62 @@ import {
 import PublicSiteLayout from '../components/PublicSiteLayout'
 import heroImage from '../assets/hero.png'
 
-const benefits = [
+const highlights = [
+  { label: 'RFID scans', Icon: ScanLine },
+  { label: 'Realtime register', Icon: Activity },
+  { label: 'Admin analytics', Icon: BarChart3 },
+]
+
+const benefitGroups = [
   {
-    title: 'Faster attendance marking',
-    text: 'RFID scans replace slow roll calls and give staff a cleaner start to each lesson.',
-    Icon: Clock3,
+    heading: 'For teachers and students',
+    items: [
+      {
+        title: 'Faster attendance marking',
+        text: 'RFID scans replace slow roll calls and give staff a cleaner start to each lesson.',
+        Icon: Clock3,
+      },
+      {
+        title: 'Reduced manual workload',
+        text: 'Teachers spend less time recording names and more time teaching.',
+        Icon: ClipboardCheck,
+      },
+      {
+        title: 'Realtime teacher dashboard',
+        text: 'Live scan updates appear as students tap their cards at the room reader.',
+        Icon: Activity,
+      },
+      {
+        title: 'Student visibility',
+        text: 'Students can review attendance status, class history, and RFID details.',
+        Icon: GraduationCap,
+      },
+    ],
   },
   {
-    title: 'Reduced manual workload',
-    text: 'Teachers spend less time recording names and more time teaching.',
-    Icon: ClipboardCheck,
-  },
-  {
-    title: 'Realtime teacher dashboard',
-    text: 'Live scan updates appear as students tap their cards at the room reader.',
-    Icon: Activity,
-  },
-  {
-    title: 'Student visibility',
-    text: 'Students can review attendance status, class history, and RFID details.',
-    Icon: GraduationCap,
-  },
-  {
-    title: 'Admin control centre',
-    text: 'Admins manage students, users, classes, readers, cards, and attendance analytics.',
-    Icon: ShieldCheck,
-  },
-  {
-    title: 'RFID reader integration',
-    text: 'ESP32 readers send authenticated scan events to the backend API.',
-    Icon: ScanLine,
-  },
-  {
-    title: 'Audit logs',
-    text: 'Sensitive student management actions are tracked for review and accountability.',
-    Icon: Database,
-  },
-  {
-    title: 'Flagged records',
-    text: 'Duplicate scans and unusual events can be surfaced for teacher or admin review.',
-    Icon: TriangleAlert,
+    heading: 'For admins and data',
+    items: [
+      {
+        title: 'Admin control centre',
+        text: 'Admins manage students, users, classes, readers, cards, and attendance analytics.',
+        Icon: ShieldCheck,
+      },
+      {
+        title: 'RFID reader integration',
+        text: 'ESP32 readers send authenticated scan events to the backend API.',
+        Icon: ScanLine,
+      },
+      {
+        title: 'Audit logs',
+        text: 'Sensitive student management actions are tracked for review and accountability.',
+        Icon: Database,
+      },
+      {
+        title: 'Flagged records',
+        text: 'Duplicate scans and unusual events can be surfaced for teacher or admin review.',
+        Icon: TriangleAlert,
+      },
+    ],
   },
 ]
 
@@ -116,14 +132,14 @@ export default function PublicHomePage() {
   return (
     <PublicSiteLayout>
       <main className="public-main">
+        {/* HERO — headline, one short subtext line, one action group. Nothing else. */}
         <section className="public-hero" style={{ '--hero-image': `url(${heroImage})` }}>
           <div className="public-hero-copy">
             <p className="public-kicker">Tago attendance system</p>
             <h1>Tago school attendance platform</h1>
             <p>
-              A school attendance system that combines RFID cards, ESP32 room readers,
-              Supabase realtime, and role-based dashboards so attendance can be recorded,
-              reviewed, and managed with less manual work.
+              RFID cards, ESP32 room readers, and realtime dashboards replace manual
+              roll calls with less admin work.
             </p>
 
             <div className="public-hero-actions" aria-label="Primary actions">
@@ -133,71 +149,69 @@ export default function PublicHomePage() {
                   {label}
                 </Link>
               ))}
-              <Link className="public-button public-button-secondary" to="/documentation">
-                <Database size={17} strokeWidth={2.25} />
-                View Project Documentation
-              </Link>
             </div>
           </div>
-
-          <div className="public-hero-strip" aria-label="System highlights">
-            <span><ScanLine size={16} strokeWidth={2.2} /> RFID scans</span>
-            <span><Activity size={16} strokeWidth={2.2} /> Realtime register</span>
-            <span><BarChart3 size={16} strokeWidth={2.2} /> Admin analytics</span>
-          </div>
         </section>
 
-        <section className="public-section public-problem" id="problem">
-          <div className="public-section-heading">
-            <p className="public-kicker">The Problem</p>
+        {/* PROBLEM — two-column split, not a card grid. Folds the old highlight strip
+            into the right-hand column instead of stacking it inside the hero. */}
+        <section className="public-section public-problem-split" id="problem">
+          <div className="public-problem-col">
             <h2>Manual attendance is slow to record and harder to see in real time.</h2>
+            <p>
+              Traditional attendance marking is repetitive for teachers, easy to delay,
+              and difficult for students or admins to inspect immediately. Staff lose
+              lesson time, and nobody has a clear picture until the day is already over.
+            </p>
           </div>
-          <div className="public-problem-grid">
-            <article>
-              <h3>What slows schools down</h3>
-              <p>
-                Traditional attendance marking can be repetitive for teachers, easy to delay,
-                and difficult for students or admins to inspect immediately.
-              </p>
-            </article>
-            <article>
-              <h3>What Tago does</h3>
-              <p>
-                The system turns each room scan into a validated attendance record, then
-                presents it through student, teacher, and admin dashboards.
-              </p>
-            </article>
-            <article>
-              <h3>Why it helps</h3>
-              <p>
-                Staff get faster registers, students get clearer visibility, and admins get
-                central tools for managing cards, readers, users, and trends.
-              </p>
-            </article>
+          <div className="public-problem-col">
+            <p>
+              Tago turns each room scan into a validated attendance record and presents
+              it through student, teacher, and admin dashboards as it happens.
+            </p>
+            <ul className="public-highlight-list" aria-label="System highlights">
+              {highlights.map(({ label, Icon }) => (
+                <li key={label}>
+                  <Icon size={17} strokeWidth={2.2} />
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
+        {/* BENEFITS — grouped divide-y rows instead of eight equal cards.
+            Two labelled clusters, 2-column rows within each. */}
         <section className="public-section">
           <div className="public-section-heading">
-            <p className="public-kicker">Benefits</p>
             <h2>Built for school attendance in real classrooms.</h2>
           </div>
-          <div className="public-benefit-grid">
-            {benefits.map(({ title, text, Icon }) => (
-              <article className="public-card" key={title}>
-                <span className="public-card-icon" aria-hidden="true">
-                  <Icon size={20} strokeWidth={2.25} />
-                </span>
-                <h3>{title}</h3>
-                <p>{text}</p>
-              </article>
+          <div className="public-benefit-groups">
+            {benefitGroups.map(({ heading, items }) => (
+              <div className="public-benefit-group" key={heading}>
+                <h3 className="public-benefit-group-heading">{heading}</h3>
+                <div className="public-benefit-rows">
+                  {items.map(({ title, text, Icon }) => (
+                    <div className="public-benefit-row" key={title}>
+                      <span className="public-card-icon" aria-hidden="true">
+                        <Icon size={19} strokeWidth={2.25} />
+                      </span>
+                      <div>
+                        <h4>{title}</h4>
+                        <p>{text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>
 
+        {/* ROLE-BASED FEATURES — the one section on the page where a card grid is
+            earned: three genuinely distinct entities, each with its own feature list. */}
         <section className="public-section" id="features">
           <div className="public-section-heading">
-            <p className="public-kicker">Role-Based Features</p>
             <h2>Separate experiences for students, teachers, and admins.</h2>
           </div>
           <div className="public-role-grid">
@@ -225,19 +239,19 @@ export default function PublicHomePage() {
           </div>
         </section>
 
+        {/* CTA — one documentation link, not two competing ones. */}
         <section className="public-section public-cta">
           <div>
-            <p className="public-kicker">Project Evidence</p>
             <h2>Read the education and technical breakdown.</h2>
             <p>
-              The documentation page explains the project overview, tech stack, file
+              The documentation page covers the project overview, tech stack, file
               structure, authentication, RFID scan logic, data model, security,
               and future improvements.
             </p>
           </div>
           <Link className="public-button" to="/documentation">
             <Database size={17} strokeWidth={2.25} />
-            Open Documentation
+            View Documentation
           </Link>
         </section>
       </main>

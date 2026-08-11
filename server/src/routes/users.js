@@ -22,9 +22,21 @@ router.patch('/me', async (req, res) => {
     return res.status(400).json({ error: 'Full name is required' })
   }
 
+  const payload = { full_name: fullName }
+
+  if (req.body.session_start_buffer_minutes !== undefined) {
+    const buffer = Number(req.body.session_start_buffer_minutes)
+
+    if (!Number.isInteger(buffer) || buffer < 0 || buffer > 60) {
+      return res.status(400).json({ error: 'session_start_buffer_minutes must be a whole number from 0 to 60' })
+    }
+
+    payload.session_start_buffer_minutes = buffer
+  }
+
   const { data, error } = await supabase
     .from('profiles')
-    .update({ full_name: fullName })
+    .update(payload)
     .eq('id', req.profile.id)
     .select('*')
     .single()

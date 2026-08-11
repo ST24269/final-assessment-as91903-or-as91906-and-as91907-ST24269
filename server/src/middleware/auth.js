@@ -26,7 +26,7 @@ async function authenticateUser(req, res, next) {
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, email, full_name, role')
+    .select('id, email, full_name, role, session_start_buffer_minutes')
     .eq('id', data.user.id)
     .single()
 

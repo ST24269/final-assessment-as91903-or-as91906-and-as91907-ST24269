@@ -5,6 +5,48 @@ const { authenticateUser, requireRole } = require('../middleware/auth')
 
 router.use(authenticateUser)
 
+// Monday=1 ... Sunday=7, matching timetable_periods.day_of_week and the
+// same convention already used in routes/timetable.js.
+function dayOfWeekFor(date = new Date()) {
+  const day = date.getDay()
+  return day === 0 ? 7 : day
+}
+
+function minutesSinceMidnight(date) {
+  return date.getHours() * 60 + date.getMinutes()
+}
+
+function timeStringToMinutes(value) {
+  const [hours, minutes] = String(value).split(':').map(Number)
+  return (hours || 0) * 60 + (minutes || 0)
+}
+
+// Is `now` within bufferMinutes of any active timetable_periods row for
+// this class today? Returns the matching period, or null plus the day's
+// periods (for a helpful "nearest period" error message) when nothing matches.
+async function findMatchingTimetablePeriod(classId, bufferMinutes, now = new Date()) {
+  const { data, error } = await supabase
+    .from('timetable_periods')
+    .select('id, start_time, end_time, day_of_week')
+    .eq('class_id', classId)
+    .eq('day_of_week', dayOfWeekFor(now))
+    .eq('active', true)
+    .order('start_time')
+
+  if (error) throw new Error(error.message)
+
+  const periods = data || []
+  const nowMinutes = minutesSinceMidnight(now)
+
+  const match = periods.find((period) => {
+    const startMinutes = timeStringToMinutes(period.start_time) - bufferMinutes
+    const endMinutes = timeStringToMinutes(period.end_time) + bufferMinutes
+    return nowMinutes >= startMinutes && nowMinutes <= endMinutes
+  })
+
+  return { match: match || null, periods }
+}
+
 const classSelect = `
   id,
   teacher_id,
@@ -112,6 +154,28 @@ router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
     return res.status(404).json({
       error: 'Class not found'
     })
+  }
+
+  // Admins can start any class at any time (covers ad-hoc/admin corrections).
+  // Teachers are held to the timetable, within their own configurable buffer.
+  if (req.profile.role !== 'admin') {
+    const bufferMinutes = Number.isInteger(req.profile.session_start_buffer_minutes)
+      ? req.profile.session_start_buffer_minutes
+      : 10
+
+    const { match, periods } = await findMatchingTimetablePeriod(class_id, bufferMinutes)
+
+    if (!match) {
+      const nearest = periods
+        .map((period) => `${period.start_time.slice(0, 5)}-${period.end_time.slice(0, 5)}`)
+        .join(', ')
+
+      return res.status(409).json({
+        error: periods.length
+          ? `"${classRecord.name}" isn't scheduled right now (today's periods: ${nearest}). You can start it within ${bufferMinutes} min of a scheduled period, or adjust your buffer in Account settings.`
+          : `"${classRecord.name}" has no timetable periods set for today, so it can't be started outside admin override. Ask an admin to add a timetable period, or have them start the session.`,
+      })
+    }
   }
 
   let readerRecord = null
