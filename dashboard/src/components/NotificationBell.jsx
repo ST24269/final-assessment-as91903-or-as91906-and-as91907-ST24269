@@ -81,7 +81,7 @@ export default function NotificationBell() {
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
         >
-          <Bell size={18} strokeWidth={2.3} />
+          <Bell size={24} strokeWidth={2.2} />
           {unreadCount > 0 && <span className="notification-bell-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
         </button>
 

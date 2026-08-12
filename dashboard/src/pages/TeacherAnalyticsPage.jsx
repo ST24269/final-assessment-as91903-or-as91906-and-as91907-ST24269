@@ -6,6 +6,7 @@ import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 import ProfileMenu from '../components/ProfileMenu'
 import NotificationBell from '../components/teacher/NotificationBell'
+import AttendanceLineChart from '../components/teacher/AttendanceLineChart'
 import Card from '../components/Card'
 import Loader from '../components/Loader'
 
@@ -18,6 +19,25 @@ function rateClass(value) {
   if (value >= 90) return 'status-present'
   if (value >= 75) return 'status-late'
   return 'status-absent'
+}
+
+function isoDate(date) {
+  return date.toISOString().slice(0, 10)
+}
+
+// Day-range presets, computed relative to "now" each render rather than
+// stored, so a preset stays correct even if the page is left open across
+// midnight.
+const RANGE_PRESETS = [
+  { id: '7', label: '7 days', days: 7 },
+  { id: '30', label: '30 days', days: 30 },
+  { id: '90', label: '90 days', days: 90 },
+]
+
+function presetRange(days) {
+  const to = new Date()
+  const from = new Date(to.getTime() - (days - 1) * 24 * 60 * 60 * 1000)
+  return { from: isoDate(from), to: isoDate(to) }
 }
 
 // Small class tile shared by "your classes" and "all classes" lists.
@@ -53,6 +73,20 @@ export default function TeacherAnalyticsPage({ session, profile }) {
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState(null)
+
+  // Day filter: a preset id ('7' / '30' / '90' / 'custom') plus the two
+  // date inputs used only when 'custom' is selected.
+  const [rangePreset, setRangePreset] = useState('30')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+
+  const range = useMemo(() => {
+    if (rangePreset === 'custom') {
+      return { from: customFrom || null, to: customTo || null }
+    }
+    const preset = RANGE_PRESETS.find((item) => item.id === rangePreset)
+    return presetRange(preset ? preset.days : 30)
+  }, [rangePreset, customFrom, customTo])
 
   useEffect(() => {
     let cancelled = false
@@ -93,11 +127,22 @@ export default function TeacherAnalyticsPage({ session, profile }) {
       return
     }
 
+    // Custom range with an incomplete pair of dates isn't ready to query
+    // yet - wait for both to be filled in rather than firing a request
+    // the backend would just reject.
+    if (rangePreset === 'custom' && (!range.from || !range.to)) {
+      return
+    }
+
     let cancelled = false
     setDetailLoading(true)
     setDetailError(null)
 
-    api.get(`/api/classes/${selectedClassId}/analytics`).then((data) => {
+    const params = new URLSearchParams()
+    if (range.from) params.set('from', range.from)
+    if (range.to) params.set('to', range.to)
+
+    api.get(`/api/classes/${selectedClassId}/analytics?${params.toString()}`).then((data) => {
       if (cancelled) return
       if (data?.error) {
         setDetailError(data.error)
@@ -109,7 +154,7 @@ export default function TeacherAnalyticsPage({ session, profile }) {
     })
 
     return () => { cancelled = true }
-  }, [selectedClassId])
+  }, [selectedClassId, range.from, range.to, rangePreset])
 
   // Selecting a class from either list just changes which one is "active"
   // for the summary panel below - it doesn't need its own attendance
@@ -168,10 +213,7 @@ export default function TeacherAnalyticsPage({ session, profile }) {
         </Card>
 
         <Card title="Search other classes">
-          <p className="table-helper-text">
-            Look up attendance for any class - useful when covering, or checking in on a colleague's roll.
-          </p>
-          <label className="student-search" style={{ marginTop: '0.6rem' }}>
+          <label className="student-search">
             <Search size={16} strokeWidth={2.2} />
             <input
               value={query}
@@ -197,6 +239,44 @@ export default function TeacherAnalyticsPage({ session, profile }) {
 
         {selectedClassId && (
           <Card title={selectedClassMeta ? `${selectedClassMeta.name} - attendance` : 'Class attendance'}>
+            <div className="analytics-filters">
+              {RANGE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`analytics-filter-chip ${rangePreset === preset.id ? 'is-active' : ''}`}
+                  onClick={() => setRangePreset(preset.id)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`analytics-filter-chip ${rangePreset === 'custom' ? 'is-active' : ''}`}
+                onClick={() => setRangePreset('custom')}
+              >
+                Custom
+              </button>
+
+              {rangePreset === 'custom' && (
+                <div className="analytics-filter-dates">
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(event) => setCustomFrom(event.target.value)}
+                    max={customTo || undefined}
+                  />
+                  <span className="table-helper-text">to</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(event) => setCustomTo(event.target.value)}
+                    min={customFrom || undefined}
+                  />
+                </div>
+              )}
+            </div>
+
             {detailLoading ? (
               <p className="table-helper-text">Loading attendance...</p>
             ) : detailError ? (
@@ -211,6 +291,11 @@ export default function TeacherAnalyticsPage({ session, profile }) {
                 </div>
 
                 <p className="table-helper-text" style={{ marginBottom: '0.5rem' }}>
+                  Daily attendance, {detail.from} to {detail.to}
+                </p>
+                <AttendanceLineChart data={detail.daily} />
+
+                <p className="table-helper-text" style={{ margin: '1.25rem 0 0.5rem' }}>
                   <Users size={14} strokeWidth={2.2} style={{ verticalAlign: '-2px' }} /> Students, lowest attendance first
                 </p>
 

@@ -59,6 +59,20 @@ bool sessionKnownActive = false;
 // beepNotEnrolled, etc.) automatically gets a matching visual flash with
 // zero changes needed at each call site.
 
+// Note frequencies (Hz) used only by the startup melody below. beep()
+// itself stays a simple digitalWrite click - it doesn't need pitches.
+#define NOTE_C4  262
+#define NOTE_D4  294
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_G4  392
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_D5  587
+#define NOTE_E5  659
+#define NOTE_G5  784
+
 void initBuzzer() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
@@ -77,10 +91,47 @@ void beep(int duration) {
   digitalWrite(LED_PIN, LOW);
 }
 
-// Fires immediately on power-on, before WiFi/RFID/storage init - confirms
-// the device is alive even if WiFi setup takes a while.
+
+struct MelodyNote {
+  int frequency;
+  int duration;   // ms, note length
+};
+
+
+#define NOTE_DUR 90
+#define NOTE_DUR_LONG 220
+
+const MelodyNote STARTUP_MELODY[] = {
+  { NOTE_C4, NOTE_DUR },
+  { NOTE_E4, NOTE_DUR },
+  { NOTE_G4, NOTE_DUR },
+  { NOTE_C5, NOTE_DUR_LONG },
+};
+
+void playStartupMelody() {
+  const int noteCount = sizeof(STARTUP_MELODY) / sizeof(STARTUP_MELODY[0]);
+
+  for (int i = 0; i < noteCount; i++) {
+    const MelodyNote& note = STARTUP_MELODY[i];
+
+    if (note.frequency > 0) {
+      digitalWrite(LED_PIN, HIGH);
+      tone(BUZZER_PIN, note.frequency, note.duration);
+    } else {
+      digitalWrite(LED_PIN, LOW);  // rest: no tone, LED off
+    }
+
+    delay(note.duration + 20);  // small gap between notes
+    digitalWrite(LED_PIN, LOW);
+  }
+
+  noTone(BUZZER_PIN);
+  digitalWrite(BUZZER_PIN, LOW);
+}
+
+
 void beepPoweredOn() {
-  beep(100);
+  playStartupMelody();
 }
 
 void beepSuccess() {

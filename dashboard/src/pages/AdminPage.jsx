@@ -33,6 +33,10 @@ import TimetableManager from '../components/admin/TimetableManager'
 import StudentClassLinksManager from '../components/admin/StudentClassLinksManager'
 import AdminEmailManager from '../components/admin/AdminEmailManager'
 
+// Note: `description` and `tips` are kept on each tab because the "?"
+// help popover in the topbar still uses them - only the always-visible
+// text under the panel header (h2) has been dropped, per the request to
+// keep just the label there.
 const TABS = [
   {
     id: 'students',
@@ -336,7 +340,6 @@ export default function AdminPage({ session, profile }) {
                   {ActiveIcon && <ActiveIcon size={20} strokeWidth={2.3} />}
                   {activeTab?.label}
                 </h2>
-                <span>{activeTab?.description}</span>
               </div>
             </div>
 

@@ -9,8 +9,6 @@ const DAYS = [
   { value: 3, label: 'Wednesday' },
   { value: 4, label: 'Thursday' },
   { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-  { value: 7, label: 'Sunday' },
 ]
 
 const EMPTY_FORM = {
@@ -212,17 +210,21 @@ export default function TimetableManager() {
         </div>
 
         <div className="timetable-day-picker" role="tablist" aria-label="Timetable days">
-          {DAYS.map((day) => (
-            <button
-              key={day.value}
-              type="button"
-              className={selectedDay === day.value ? 'is-active' : ''}
-              onClick={() => selectDay(day)}
-            >
-              <span>{day.label.slice(0, 3)}</span>
-              <strong>{periodCounts.get(day.value) || 0}</strong>
-            </button>
-          ))}
+          {DAYS.map((day) => {
+            const count = periodCounts.get(day.value) || 0
+            return (
+              <button
+                key={day.value}
+                type="button"
+                className={selectedDay === day.value ? 'is-active' : ''}
+                onClick={() => selectDay(day)}
+                title={`${count} period${count === 1 ? '' : 's'} scheduled on ${day.label}`}
+              >
+                <span className="timetable-day-count" aria-hidden="true">{count}</span>
+                <span>{day.label.slice(0, 3)}</span>
+              </button>
+            )
+          })}
         </div>
 
         <div className="timetable-builder-grid">
