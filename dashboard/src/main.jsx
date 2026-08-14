@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
 import AppErrorBoundary from './components/AppErrorBoundary.jsx'
 import './index.css'
+import './styles/vivid.css'
 
 function getStoredTheme() {
   try {

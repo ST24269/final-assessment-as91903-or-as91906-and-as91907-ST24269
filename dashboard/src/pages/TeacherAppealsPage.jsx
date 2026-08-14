@@ -15,9 +15,6 @@ export default function TeacherAppealsPage({ session, profile }) {
         <div>
           <p className="portal-eyebrow">Attendance appeals</p>
           <h1 className="portal-title">Manage appeals</h1>
-          <p className="portal-subtitle">
-            Review, approve, reject, or resolve appeals for your classes and learning-advisor group.
-          </p>
         </div>
       </section>
 

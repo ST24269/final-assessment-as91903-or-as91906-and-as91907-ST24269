@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Search, Users } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 import { api } from '../api/client'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
@@ -294,10 +294,6 @@ export default function TeacherAnalyticsPage({ session, profile }) {
                   Daily attendance, {detail.from} to {detail.to}
                 </p>
                 <AttendanceLineChart data={detail.daily} />
-
-                <p className="table-helper-text" style={{ margin: '1.25rem 0 0.5rem' }}>
-                  <Users size={14} strokeWidth={2.2} style={{ verticalAlign: '-2px' }} /> Students, lowest attendance first
-                </p>
 
                 {detail.students.length === 0 ? (
                   <p className="table-helper-text">No students are enrolled in this class.</p>

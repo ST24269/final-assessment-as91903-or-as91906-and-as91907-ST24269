@@ -150,11 +150,7 @@ export default function ResetPasswordPage() {
             <ThemeToggle />
           </div>
 
-          <p className="login-intro">
-            {checkingLink
-              ? 'Checking your recovery link...'
-              : 'Enter a new password after opening the recovery link from your email.'}
-          </p>
+          {checkingLink && <p className="login-intro">Checking your recovery link...</p>}
 
           <div className="login-field">
             <label htmlFor="new-password">New password</label>

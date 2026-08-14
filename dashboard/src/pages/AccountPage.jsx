@@ -809,15 +809,16 @@ export default function AccountPage({ session, profile, section = 'profile', set
 
           {profile?.role === 'teacher' && (
             <Card title="Session start buffer">
-              <p className="table-helper-text">
-                How many minutes before or after a class's scheduled start/end time you're
-                allowed to start its session. Starting outside this window is blocked.
-              </p>
               <form className="account-form" onSubmit={handleBufferSubmit}>
                 <div className="login-field">
                   <label htmlFor="session-buffer">Buffer (minutes, 0-60)</label>
+                  <span id="session-buffer-help" className="sr-only">
+                    How many minutes before or after a class&apos;s scheduled start or end time
+                    you are allowed to start its session. Starting outside this window is blocked.
+                  </span>
                   <input
                     id="session-buffer"
+                    aria-describedby="session-buffer-help"
                     type="number"
                     min={0}
                     max={60}

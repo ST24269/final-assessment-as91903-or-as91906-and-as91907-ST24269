@@ -118,7 +118,6 @@ export default function UsersManager() {
           </select>
           <button onClick={addUser} disabled={adding}>{adding ? 'Creating...' : 'Create'}</button>
         </div>
-        <p className="student-management-hint">Student login creation is handled from Student Management so student records, RFID cards, and confirmation emails stay together.</p>
         {error && <p className="action-notice is-error" role="alert">{error}</p>}
         {success && <p className="action-notice is-success" role="status">{success}</p>}
       </div>

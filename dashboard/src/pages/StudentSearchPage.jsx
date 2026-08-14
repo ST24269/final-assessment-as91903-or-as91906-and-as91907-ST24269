@@ -135,10 +135,6 @@ export default function StudentSearchPage({ session, profile }) {
         </Link>
 
         <Card title="Find a student by their card">
-          <p className="table-helper-text">
-            Tap or scan a student's card here, or type the UID and press Enter, to pull up their
-            full profile - name, photo, year, classes, timetable and LA teacher.
-          </p>
           <form onSubmit={lookupByCard} className="portal-session-grid" style={{ marginTop: '0.75rem' }}>
             <label className="student-search" style={{ flex: 1 }}>
               <CreditCard size={16} strokeWidth={2.2} />

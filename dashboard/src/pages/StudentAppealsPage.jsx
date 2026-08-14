@@ -275,7 +275,7 @@ export default function StudentAppealsPage({ session, profile }) {
                     ))}
                   </select>
                   {attendanceOptions.length === 0 && (
-                    <span className="field-help">No attendance records are available yet. Use the date and class fields below.</span>
+                    <span className="field-help">No attendance records are available yet.</span>
                   )}
                 </div>
 

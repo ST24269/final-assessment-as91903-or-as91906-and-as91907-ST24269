@@ -1,15 +1,6 @@
-import {
-  BookOpen,
-  CheckCircle2,
-  Database,
-  FileText,
-  KeyRound,
-  LockKeyhole,
-  Radio,
-  Rocket,
-  ShieldCheck,
-} from 'lucide-react'
 import PublicSiteLayout from '../components/PublicSiteLayout'
+import Reveal from '../components/Reveal'
+import { Separator } from '@/components/ui/separator'
 
 const techStack = [
   'React frontend with Vite',
@@ -57,15 +48,15 @@ const futureImprovements = [
 ]
 
 const docSections = [
-  { id: 'overview', label: 'Project Overview', Icon: BookOpen },
-  { id: 'problem', label: 'Problem Being Solved', Icon: FileText },
-  { id: 'tech-stack', label: 'Tech Stack', Icon: Rocket },
-  { id: 'file-structure', label: 'File Structure', Icon: FileText },
-  { id: 'authentication', label: 'Authentication and Roles', Icon: KeyRound },
-  { id: 'rfid-logic', label: 'RFID Scan Logic', Icon: Radio },
-  { id: 'data-model', label: 'Database Overview', Icon: Database },
-  { id: 'security', label: 'Security and Privacy', Icon: LockKeyhole },
-  { id: 'future', label: 'Future Improvements', Icon: ShieldCheck },
+  { id: 'overview', label: 'Project Overview' },
+  { id: 'problem', label: 'Problem Being Solved' },
+  { id: 'tech-stack', label: 'Tech Stack' },
+  { id: 'file-structure', label: 'File Structure' },
+  { id: 'authentication', label: 'Authentication and Roles' },
+  { id: 'rfid-logic', label: 'RFID Scan Logic' },
+  { id: 'data-model', label: 'Database Overview' },
+  { id: 'security', label: 'Security and Privacy' },
+  { id: 'future', label: 'Future Improvements' },
 ]
 
 const fileTree = `final-assessment-as91903-or-as91906-and-as91907-ST24269/
@@ -113,7 +104,7 @@ const fileTree = `final-assessment-as91903-or-as91906-and-as91907-ST24269/
         |-- api/
         |   |-- client.js
         |-- assets/
-        |   |-- hero.png
+        |   |-- tago-logo.png
         |-- config/
         |   |-- permissions.js
         |-- hooks/
@@ -136,46 +127,39 @@ const fileTree = `final-assessment-as91903-or-as91906-and-as91907-ST24269/
             |-- PublicSiteLayout.jsx
             |-- admin/`
 
-function DocSection({ id, label, Icon, children }) {
+function DocSection({ id, label, children }) {
   return (
-    <section className="public-doc-section" id={id}>
-      <div className="public-doc-section-title">
-        <span className="public-card-icon" aria-hidden="true">
-          <Icon size={20} strokeWidth={2.25} />
-        </span>
-        <h2>{label}</h2>
-      </div>
-      {children}
-    </section>
+    <Reveal as="section" className="vivid-doc-section" id={id}>
+      <h2 className="vivid-doc-heading">{label}</h2>
+      <Separator className="vivid-rule" />
+      <div className="vivid-doc-body">{children}</div>
+    </Reveal>
   )
 }
 
 export default function ProjectDocumentationPage() {
   return (
     <PublicSiteLayout>
-      <main className="public-docs-shell">
-        <section className="public-doc-hero">
-          <p className="public-kicker">Education and Project Breakdown</p>
-          <h1>Project Documentation</h1>
-          <p>
-            A readable README-style explanation of the Tago attendance system,
-            including the problem, implementation, role dashboards, RFID scan logic,
-            data model, security choices, and future improvements.
-          </p>
+      <main className="vivid-main vivid-docs">
+        <section className="vivid-doc-hero">
+          <Reveal as="p" className="vivid-eyebrow">Education and project breakdown</Reveal>
+          <Reveal as="h1" className="vivid-display-sm" delay={60}>Project Documentation</Reveal>
+          <Reveal as="p" className="vivid-body" delay={120}>
+            A README-style explanation of how the Tago attendance system was built.
+          </Reveal>
         </section>
 
-        <div className="public-doc-layout">
-          <aside className="public-doc-nav" aria-label="Documentation sections">
-            {docSections.map(({ id, label, Icon }) => (
+        <div className="vivid-doc-layout">
+          <aside className="vivid-doc-nav" aria-label="Documentation sections">
+            {docSections.map(({ id, label }) => (
               <a key={id} href={`#${id}`}>
-                <Icon size={15} strokeWidth={2.2} />
-                <span>{label}</span>
+                {label}
               </a>
             ))}
           </aside>
 
-          <article className="public-docs-main">
-            <DocSection id="overview" label="Project Overview" Icon={BookOpen}>
+          <article className="vivid-docs-main">
+            <DocSection id="overview" label="Project Overview">
               <p>
                 Tago is an RFID-based school attendance system. It was built to
                 connect physical classroom scans with digital attendance dashboards for
@@ -185,7 +169,7 @@ export default function ProjectDocumentationPage() {
               </p>
             </DocSection>
 
-            <DocSection id="problem" label="Problem Being Solved" Icon={FileText}>
+            <DocSection id="problem" label="Problem Being Solved">
               <p>
                 Manual attendance can be slow, repetitive, and hard to track in real
                 time. Teachers may lose lesson time marking a roll, students may not
@@ -199,40 +183,19 @@ export default function ProjectDocumentationPage() {
               </p>
             </DocSection>
 
-            <DocSection id="tech-stack" label="Tech Stack" Icon={Rocket}>
-              <ul className="public-doc-checklist">
+            <DocSection id="tech-stack" label="Tech Stack">
+              <ul className="vivid-doc-list">
                 {techStack.map((item) => (
-                  <li key={item}>
-                    <CheckCircle2 size={16} strokeWidth={2.2} />
-                    <span>{item}</span>
-                  </li>
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             </DocSection>
 
-            <DocSection id="file-structure" label="File Structure" Icon={FileText}>
-              <p>
-                This overview shows the important files and folders that exist in the
-                current repository.
-              </p>
-              <pre className="public-file-tree">{fileTree}</pre>
-              <div className="public-doc-note-grid">
-                <article>
-                  <h3>dashboard</h3>
-                  <p>React frontend, public pages, role login pages, dashboards, account pages, shared components, styles, and Supabase browser client.</p>
-                </article>
-                <article>
-                  <h3>server</h3>
-                  <p>Express API, authentication middleware, Supabase service client, database schema, routes for scans, sessions, attendance, students, users, and password reset.</p>
-                </article>
-                <article>
-                  <h3>hardware</h3>
-                  <p>ESP32 firmware project and PlatformIO configuration for the RFID reader side of the system.</p>
-                </article>
-              </div>
+            <DocSection id="file-structure" label="File Structure">
+              <pre className="vivid-file-tree">{fileTree}</pre>
             </DocSection>
 
-            <DocSection id="authentication" label="Authentication and Roles" Icon={KeyRound}>
+            <DocSection id="authentication" label="Authentication and Roles">
               <p>
                 The app has three roles: student, teacher, and admin. Each role has a
                 dedicated login URL: <code>/login/student</code>, <code>/login/teacher</code>,
@@ -246,7 +209,7 @@ export default function ProjectDocumentationPage() {
               </p>
             </DocSection>
 
-            <DocSection id="rfid-logic" label="RFID Scan Logic" Icon={Radio}>
+            <DocSection id="rfid-logic" label="RFID Scan Logic">
               <p>
                 The ESP32 reader sends scans to <code>/api/attendance/scan</code> with an
                 RFID UID and reader API key. The server validates the active reader,
@@ -261,10 +224,10 @@ export default function ProjectDocumentationPage() {
               </p>
             </DocSection>
 
-            <DocSection id="data-model" label="Database and Data Model Overview" Icon={Database}>
-              <div className="public-data-table" role="table" aria-label="Database entities">
+            <DocSection id="data-model" label="Database and Data Model Overview">
+              <div className="vivid-data-table" role="table" aria-label="Database entities">
                 {dataModel.map(([entity, description]) => (
-                  <div className="public-data-row" role="row" key={entity}>
+                  <div className="vivid-data-row" role="row" key={entity}>
                     <strong role="cell">{entity}</strong>
                     <span role="cell">{description}</span>
                   </div>
@@ -276,24 +239,18 @@ export default function ProjectDocumentationPage() {
               </p>
             </DocSection>
 
-            <DocSection id="security" label="Security and Privacy" Icon={LockKeyhole}>
-              <ul className="public-doc-checklist">
+            <DocSection id="security" label="Security and Privacy">
+              <ul className="vivid-doc-list">
                 {securityPoints.map((point) => (
-                  <li key={point}>
-                    <ShieldCheck size={16} strokeWidth={2.2} />
-                    <span>{point}</span>
-                  </li>
+                  <li key={point}>{point}</li>
                 ))}
               </ul>
             </DocSection>
 
-            <DocSection id="future" label="Future Improvements" Icon={ShieldCheck}>
-              <ul className="public-doc-checklist">
+            <DocSection id="future" label="Future Improvements">
+              <ul className="vivid-doc-list">
                 {futureImprovements.map((item) => (
-                  <li key={item}>
-                    <CheckCircle2 size={16} strokeWidth={2.2} />
-                    <span>{item}</span>
-                  </li>
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             </DocSection>

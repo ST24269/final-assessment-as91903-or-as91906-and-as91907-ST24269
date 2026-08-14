@@ -217,12 +217,6 @@ export default function ManualRollPage({ session, profile }) {
         </Link>
 
         <Card title="Manual roll (backup attendance)">
-          <p className="table-helper-text">
-            Use this if the RFID reader is down or a card isn't working. Pick a class, mark every
-            student yourself, then submit the roll to admin the same as a normal session. Nobody
-            is marked present automatically - each row needs a status before you can save.
-          </p>
-
           <div className="portal-session-grid" style={{ marginTop: '0.75rem' }}>
             <select
               value={selectedClass}
@@ -248,10 +242,6 @@ export default function ManualRollPage({ session, profile }) {
 
         {selectedClass && !activeSession && !loadingRoster && (
           <Card title="Start the roll">
-            <p className="table-helper-text">
-              No session is currently live for this class. Starting one here does not need a
-              classroom reader.
-            </p>
             <button
               type="button"
               onClick={startManualSession}

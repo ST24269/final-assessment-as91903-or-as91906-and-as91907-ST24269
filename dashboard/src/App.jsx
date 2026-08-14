@@ -18,6 +18,7 @@ import TeacherCoverPage from './pages/TeacherCoverPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import PublicHomePage from './pages/PublicHomePage'
 import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
 import Loader from './components/Loader'
 import { canAccessAccountSection } from './config/permissions'
 
@@ -330,6 +331,7 @@ export default function App() {
         <Route path="/home" element={<PublicHomePage />} />
         <Route path="/documentation" element={<ProjectDocumentationPage />} />
         <Route path="/project" element={<ProjectDocumentationPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
 
         <Route
           path="/login"

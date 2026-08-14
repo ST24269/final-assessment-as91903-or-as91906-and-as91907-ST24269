@@ -14,19 +14,16 @@ const ROLE_COPY = {
   student: {
     label: 'Student',
     title: 'Student sign in',
-    intro: 'View your attendance status, class history, and scan records.',
     Icon: GraduationCap,
   },
   teacher: {
     label: 'Teacher',
     title: 'Teacher sign in',
-    intro: 'Start class sessions, review live RFID scans, and update registers.',
     Icon: UsersRound,
   },
   admin: {
     label: 'Admin',
     title: 'Admin sign in',
-    intro: 'Manage students, classes, readers, attendance records, and user access.',
     Icon: ShieldCheck,
   },
 }
@@ -200,8 +197,6 @@ export default function LoginPage({ role = 'student' }) {
 
             <ThemeToggle />
           </div>
-
-          <p className="login-intro">{config.intro}</p>
 
           {roleNotice?.type === 'role-mismatch' && (
             <div className="login-notice" role="alert">

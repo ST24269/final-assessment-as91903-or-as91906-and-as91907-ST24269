@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { FileText, GraduationCap, Home, LogIn, Menu, ShieldCheck, UsersRound, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import AppFooter from './AppFooter'
 import TagoLogo from './TagoLogo'
 import ThemeToggle from './ThemeToggle'
+import { Button } from '@/components/ui/button'
 
 const loginLinks = [
-  { label: 'Student', to: '/login/student', Icon: GraduationCap },
-  { label: 'Teacher', to: '/login/teacher', Icon: UsersRound },
-  { label: 'Admin', to: '/login/admin', Icon: ShieldCheck },
+  { label: 'Student', to: '/login/student' },
+  { label: 'Teacher', to: '/login/teacher' },
+  { label: 'Admin', to: '/login/admin' },
 ]
 
 const menuItems = [
-  { label: 'Home', ariaLabel: 'Go to public home page', to: '/', Icon: Home },
-  { label: 'Features', ariaLabel: 'View role-based features', to: '/#features', Icon: UsersRound },
-  { label: 'Documentation', ariaLabel: 'Open project documentation', to: '/documentation', Icon: FileText },
+  { label: 'Home', ariaLabel: 'Go to public home page', to: '/' },
+  { label: 'Features', ariaLabel: 'View role-based features', to: '/#features' },
+  { label: 'Documentation', ariaLabel: 'Open project documentation', to: '/documentation' },
 ]
 
 export default function PublicSiteLayout({ children }) {
@@ -29,63 +30,59 @@ export default function PublicSiteLayout({ children }) {
 
   return (
     <div className="public-site">
-      <header className={`public-nav-wrap${menuOpen ? ' is-open' : ''}`}>
-        <nav className="public-nav" aria-label="Public navigation">
-          <Link className="public-brand" to="/" aria-label="Tago home">
-            <TagoLogo showWord markClassName="public-brand-mark" />
-            <span className="public-brand-copy">
-              <em>School attendance system</em>
-            </span>
+      <header className={`vivid-nav-wrap${menuOpen ? ' is-open' : ''}`}>
+        <nav className="vivid-nav" aria-label="Public navigation">
+          <Link className="vivid-brand" to="/" aria-label="Tago home">
+            <TagoLogo showWord markClassName="vivid-brand-mark" />
           </Link>
 
-          <div className="public-nav-links" aria-label="Site sections">
-            {menuItems.map(({ label, ariaLabel, to, Icon }) => (
+          <div className="vivid-nav-links" aria-label="Site sections">
+            {menuItems.map(({ label, ariaLabel, to }) => (
               <Link
                 key={to}
-                className={`public-nav-link${isActiveLink(to) ? ' is-active' : ''}`}
+                className={`vivid-nav-link${isActiveLink(to) ? ' is-active' : ''}`}
                 to={to}
                 aria-label={ariaLabel}
                 aria-current={isActiveLink(to) ? 'page' : undefined}
                 onClick={() => setMenuOpen(false)}
               >
-                <Icon size={16} strokeWidth={2.2} />
-                <span>{label}</span>
+                {label}
               </Link>
             ))}
           </div>
 
-          <div className="public-nav-actions">
-            <div className="public-nav-login-links" aria-label="Login links">
-              {loginLinks.map(({ label, to, Icon }, index) => (
+          <div className="vivid-nav-actions">
+            <div className="vivid-nav-logins" aria-label="Login links">
+              {loginLinks.map(({ label, to }) => (
                 <Link
                   key={to}
-                  className={`public-nav-login${index === 0 ? ' is-primary' : ''}`}
+                  className="vivid-nav-link"
                   to={to}
                   onClick={() => setMenuOpen(false)}
                 >
-                  <Icon size={15} strokeWidth={2.25} />
-                  <span>{label}</span>
+                  {label}
                 </Link>
               ))}
             </div>
-            <ThemeToggle />
-            <button
-              className="public-nav-menu-button"
+            <ThemeToggle className="vivid-theme-toggle" />
+            <Button
+              variant="outline"
+              className="vivid-outline-button vivid-menu-button"
               type="button"
               aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={menuOpen}
               aria-controls="public-mobile-menu"
               onClick={() => setMenuOpen((open) => !open)}
             >
-              {menuOpen ? <X size={19} strokeWidth={2.35} /> : <Menu size={19} strokeWidth={2.35} />}
+              {menuOpen ? <X size={17} strokeWidth={1.6} /> : <Menu size={17} strokeWidth={1.6} />}
               <span>Menu</span>
-            </button>
+            </Button>
           </div>
         </nav>
 
-        <div className="public-mobile-panel" id="public-mobile-menu" hidden={!menuOpen}>
-          <div className="public-mobile-links" aria-label="Mobile site sections">
-            {menuItems.map(({ label, ariaLabel, to, Icon }) => (
+        <div className="vivid-mobile-panel" id="public-mobile-menu" hidden={!menuOpen}>
+          <div className="vivid-mobile-links" aria-label="Mobile site sections">
+            {menuItems.map(({ label, ariaLabel, to }) => (
               <Link
                 key={to}
                 className={isActiveLink(to) ? 'is-active' : ''}
@@ -94,23 +91,15 @@ export default function PublicSiteLayout({ children }) {
                 aria-current={isActiveLink(to) ? 'page' : undefined}
                 onClick={() => setMenuOpen(false)}
               >
-                <Icon size={17} strokeWidth={2.25} />
-                <span>{label}</span>
+                {label}
               </Link>
             ))}
           </div>
 
-          <div className="public-mobile-logins" aria-label="Mobile login links">
-            {loginLinks.map(({ label, to, Icon }, index) => (
-              <Link
-                key={to}
-                className={index === 0 ? 'is-primary' : ''}
-                to={to}
-                onClick={() => setMenuOpen(false)}
-              >
-                <Icon size={17} strokeWidth={2.25} />
-                <span>{label} Login</span>
-                <LogIn size={15} strokeWidth={2.25} />
+          <div className="vivid-mobile-logins" aria-label="Mobile login links">
+            {loginLinks.map(({ label, to }) => (
+              <Link key={to} to={to} onClick={() => setMenuOpen(false)}>
+                {label} Login
               </Link>
             ))}
           </div>
@@ -119,7 +108,7 @@ export default function PublicSiteLayout({ children }) {
 
       {children}
 
-      <AppFooter className="public-footer" />
+      <AppFooter variant="vivid" />
     </div>
   )
 }

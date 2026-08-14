@@ -1,7 +1,7 @@
 // Dependency-free SVG line chart - no recharts/d3. A smooth line with a
-// coloured gradient area fill underneath, plus a coloured dot per day
-// (green/amber/red against the same 90%/75% thresholds used elsewhere on
-// this page) so a bad day pops out even at a glance.
+// flat area fill underneath, plus a coloured dot per day (green/amber/red
+// against the same 90%/75% thresholds used elsewhere on this page) so a bad
+// day pops out even at a glance.
 
 function formatDayLabel(dateStr) {
   const date = new Date(`${dateStr}T00:00:00`)
@@ -84,19 +84,6 @@ export default function AttendanceLineChart({ data }) {
         role="img"
         aria-label="Daily attendance percentage"
       >
-        <defs>
-          <linearGradient id="attendance-area-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#a855f7" stopOpacity="0.45" />
-            <stop offset="45%" stopColor="#6fa8dc" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#6fa8dc" stopOpacity="0.02" />
-          </linearGradient>
-          <linearGradient id="attendance-line-stroke" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="55%" stopColor="#6fa8dc" />
-            <stop offset="100%" stopColor="#4fb99a" />
-          </linearGradient>
-        </defs>
-
         {/* Gridlines + y-axis labels */}
         {GRID_LINES.map((value) => (
           <g key={value}>
@@ -113,11 +100,11 @@ export default function AttendanceLineChart({ data }) {
           </g>
         ))}
 
-        {/* Gradient area under the line */}
-        <path d={areaPath} fill="url(#attendance-area-fill)" stroke="none" />
+        {/* Flat fill under the line. */}
+        <path d={areaPath} fill="var(--primary)" fillOpacity="0.14" stroke="none" />
 
         {/* The line itself */}
-        <path d={linePath} fill="none" stroke="url(#attendance-line-stroke)" strokeWidth={2.75} strokeLinecap="round" />
+        <path d={linePath} fill="none" stroke="var(--primary)" strokeWidth={2.75} strokeLinecap="round" />
 
         {/* Coloured points + day labels */}
         {points.map(({ x, y, day }, index) => (

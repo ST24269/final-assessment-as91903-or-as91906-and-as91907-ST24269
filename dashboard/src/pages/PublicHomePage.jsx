@@ -1,76 +1,32 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import {
-  Activity,
-  BarChart3,
-  CheckCircle2,
-  ClipboardCheck,
-  Clock3,
-  Database,
-  GraduationCap,
-  ScanLine,
-  ShieldCheck,
-  TriangleAlert,
-  UsersRound,
-} from 'lucide-react'
+import { GraduationCap, ShieldCheck, UsersRound } from 'lucide-react'
 import PublicSiteLayout from '../components/PublicSiteLayout'
-import heroImage from '../assets/hero.png'
+import PrismArtifact from '../components/PrismArtifact'
+import Reveal from '../components/Reveal'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
 
-const highlights = [
-  { label: 'RFID scans', Icon: ScanLine },
-  { label: 'Realtime register', Icon: Activity },
-  { label: 'Admin analytics', Icon: BarChart3 },
-]
+const highlights = ['RFID scans', 'Realtime register', 'Admin analytics']
 
 const benefitGroups = [
   {
     heading: 'For teachers and students',
     items: [
-      {
-        title: 'Faster attendance marking',
-        text: 'RFID scans replace slow roll calls and give staff a cleaner start to each lesson.',
-        Icon: Clock3,
-      },
-      {
-        title: 'Reduced manual workload',
-        text: 'Teachers spend less time recording names and more time teaching.',
-        Icon: ClipboardCheck,
-      },
-      {
-        title: 'Realtime teacher dashboard',
-        text: 'Live scan updates appear as students tap their cards at the room reader.',
-        Icon: Activity,
-      },
-      {
-        title: 'Student visibility',
-        text: 'Students can review attendance status, class history, and RFID details.',
-        Icon: GraduationCap,
-      },
+      'Faster attendance marking',
+      'Reduced manual workload',
+      'Realtime teacher dashboard',
+      'Student visibility',
     ],
   },
   {
     heading: 'For admins and data',
     items: [
-      {
-        title: 'Admin control centre',
-        text: 'Admins manage students, users, classes, readers, cards, and attendance analytics.',
-        Icon: ShieldCheck,
-      },
-      {
-        title: 'RFID reader integration',
-        text: 'ESP32 readers send authenticated scan events to the backend API.',
-        Icon: ScanLine,
-      },
-      {
-        title: 'Audit logs',
-        text: 'Sensitive student management actions are tracked for review and accountability.',
-        Icon: Database,
-      },
-      {
-        title: 'Flagged records',
-        text: 'Duplicate scans and unusual events can be surfaced for teacher or admin review.',
-        Icon: TriangleAlert,
-      },
+      'Admin control centre',
+      'RFID reader integration',
+      'Audit logs',
+      'Flagged records',
     ],
   },
 ]
@@ -116,9 +72,9 @@ const roleCards = [
 ]
 
 const loginButtons = [
-  { label: 'Student Login', to: '/login/student', Icon: GraduationCap },
-  { label: 'Teacher Login', to: '/login/teacher', Icon: UsersRound },
-  { label: 'Admin Login', to: '/login/admin', Icon: ShieldCheck },
+  { label: 'Student Login', to: '/login/student' },
+  { label: 'Teacher Login', to: '/login/teacher' },
+  { label: 'Admin Login', to: '/login/admin' },
 ]
 
 export default function PublicHomePage() {
@@ -131,128 +87,108 @@ export default function PublicHomePage() {
 
   return (
     <PublicSiteLayout>
-      <main className="public-main">
-        {/* HERO — headline, one short subtext line, one action group. Nothing else. */}
-        <section className="public-hero" style={{ '--hero-image': `url(${heroImage})` }}>
-          <div className="public-hero-copy">
-            <p className="public-kicker">Tago attendance system</p>
-            <h1>Tago school attendance platform</h1>
-            <p>
-              RFID cards, ESP32 room readers, and realtime dashboards replace manual
-              roll calls with less admin work.
-            </p>
-
-            <div className="public-hero-actions" aria-label="Primary actions">
-              {loginButtons.map(({ label, to, Icon }) => (
-                <Link key={to} className="public-button" to={to}>
-                  <Icon size={17} strokeWidth={2.25} />
-                  {label}
-                </Link>
+      <main className="vivid-main">
+        {/* Hero */}
+        <section className="vivid-hero">
+          <PrismArtifact className="vivid-hero-prism" />
+          <div className="vivid-hero-copy">
+            <Reveal as="p" className="vivid-eyebrow">Tago attendance system</Reveal>
+            <Reveal as="h1" className="vivid-display" delay={80}>
+              Tago school
+              <br />
+              attendance
+              <br />
+              platform
+            </Reveal>
+            <Reveal className="vivid-hero-actions" delay={200} aria-label="Primary actions">
+              {loginButtons.map(({ label, to }) => (
+                <Button key={to} asChild variant="link" className="vivid-ghost-link">
+                  <Link to={to}>{label}</Link>
+                </Button>
               ))}
-            </div>
+              <Button asChild variant="outline" className="vivid-outline-button">
+                <Link to="/documentation">Documentation</Link>
+              </Button>
+            </Reveal>
           </div>
         </section>
 
-        {/* PROBLEM — two-column split, not a card grid. Folds the old highlight strip
-            into the right-hand column instead of stacking it inside the hero. */}
-        <section className="public-section public-problem-split" id="problem">
-          <div className="public-problem-col">
-            <h2>Manual attendance is slow to record and harder to see in real time.</h2>
-            <p>
-              Traditional attendance marking is repetitive for teachers, easy to delay,
-              and difficult for students or admins to inspect immediately. Staff lose
-              lesson time, and nobody has a clear picture until the day is already over.
-            </p>
-          </div>
-          <div className="public-problem-col">
-            <p>
-              Tago turns each room scan into a validated attendance record and presents
-              it through student, teacher, and admin dashboards as it happens.
-            </p>
-            <ul className="public-highlight-list" aria-label="System highlights">
-              {highlights.map(({ label, Icon }) => (
-                <li key={label}>
-                  <Icon size={17} strokeWidth={2.2} />
-                  <span>{label}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        {/* BENEFITS — grouped divide-y rows instead of eight equal cards.
-            Two labelled clusters, 2-column rows within each. */}
-        <section className="public-section">
-          <div className="public-section-heading">
-            <h2>Built for school attendance in real classrooms.</h2>
-          </div>
-          <div className="public-benefit-groups">
-            {benefitGroups.map(({ heading, items }) => (
-              <div className="public-benefit-group" key={heading}>
-                <h3 className="public-benefit-group-heading">{heading}</h3>
-                <div className="public-benefit-rows">
-                  {items.map(({ title, text, Icon }) => (
-                    <div className="public-benefit-row" key={title}>
-                      <span className="public-card-icon" aria-hidden="true">
-                        <Icon size={19} strokeWidth={2.25} />
-                      </span>
-                      <div>
-                        <h4>{title}</h4>
-                        <p>{text}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        {/* Problem */}
+        <section className="vivid-section vivid-problem" id="problem">
+          <Reveal as="p" className="vivid-lead">
+            Building a clearer picture of attendance is our singular aim.
+          </Reveal>
+          <Reveal as="h2" className="vivid-heading-lg" delay={60}>
+            Manual attendance is slow to record and harder to see in real time.
+          </Reveal>
+          <Reveal as="p" className="vivid-body" delay={120}>
+            Tago turns each room scan into a validated attendance record and presents it
+            through student, teacher, and admin dashboards as it happens.
+          </Reveal>
+          <Reveal as="ul" className="vivid-service-labels" delay={180} aria-label="System highlights">
+            {highlights.map((label) => (
+              <li key={label}>{label}</li>
             ))}
-          </div>
+          </Reveal>
         </section>
 
-        {/* ROLE-BASED FEATURES — the one section on the page where a card grid is
-            earned: three genuinely distinct entities, each with its own feature list. */}
-        <section className="public-section" id="features">
-          <div className="public-section-heading">
-            <h2>Separate experiences for students, teachers, and admins.</h2>
-          </div>
-          <div className="public-role-grid">
-            {roleCards.map(({ role, Icon, summary, features }) => (
-              <article className="public-role-card" key={role}>
-                <header>
-                  <span className="public-card-icon" aria-hidden="true">
-                    <Icon size={22} strokeWidth={2.25} />
-                  </span>
-                  <div>
-                    <h3>{role}</h3>
-                    <p>{summary}</p>
-                  </div>
-                </header>
-                <ul>
-                  {features.map((feature) => (
-                    <li key={feature}>
-                      <CheckCircle2 size={16} strokeWidth={2.2} />
-                      <span>{feature}</span>
+        {/* Benefits */}
+        <section className="vivid-section">
+          <Reveal as="h2" className="vivid-heading-lg vivid-section-statement">
+            Built for school attendance in real classrooms.
+          </Reveal>
+          <div className="vivid-benefit-groups">
+            {benefitGroups.map(({ heading, items }, index) => (
+              <Reveal className="vivid-benefit-group" key={heading} delay={index * 90}>
+                <p className="vivid-eyebrow">{heading}</p>
+                <Separator className="vivid-rule" />
+                <ul className="vivid-benefit-list">
+                  {items.map((title) => (
+                    <li key={title}>
+                      <span className="vivid-benefit-title">{title}</span>
                     </li>
                   ))}
                 </ul>
-              </article>
+              </Reveal>
             ))}
           </div>
         </section>
 
-        {/* CTA — one documentation link, not two competing ones. */}
-        <section className="public-section public-cta">
-          <div>
-            <h2>Read the education and technical breakdown.</h2>
-            <p>
-              The documentation page covers the project overview, tech stack, file
-              structure, authentication, RFID scan logic, data model, security,
-              and future improvements.
-            </p>
+        {/* Role features */}
+        <section className="vivid-section" id="features">
+          <Reveal as="h2" className="vivid-heading-lg vivid-section-statement">
+            Separate experiences for students, teachers, and admins.
+          </Reveal>
+          <div className="vivid-role-grid">
+            {roleCards.map(({ role, Icon, summary, features }, index) => (
+              <Reveal key={role} delay={index * 90}>
+                <Card className="vivid-role-card">
+                  <CardHeader className="vivid-role-header">
+                    <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+                    <h3 className="vivid-role-title">{role}</h3>
+                    <p className="vivid-role-summary">{summary}</p>
+                  </CardHeader>
+                  <CardContent className="vivid-role-body">
+                    <ul className="vivid-role-list">
+                      {features.map((feature) => (
+                        <li key={feature}>{feature}</li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              </Reveal>
+            ))}
           </div>
-          <Link className="public-button" to="/documentation">
-            <Database size={17} strokeWidth={2.25} />
-            View Documentation
-          </Link>
+        </section>
+
+        {/* CTA */}
+        <section className="vivid-section vivid-cta">
+          <Reveal as="h2" className="vivid-heading-lg">Read the education and technical breakdown.</Reveal>
+          <Reveal delay={80}>
+            <Button asChild variant="outline" className="vivid-outline-button">
+              <Link to="/documentation">View Documentation</Link>
+            </Button>
+          </Reveal>
         </section>
       </main>
     </PublicSiteLayout>

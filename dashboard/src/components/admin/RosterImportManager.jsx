@@ -228,10 +228,20 @@ export default function RosterImportManager() {
             <Download size={16} strokeWidth={2.2} />
             Download template
           </button>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>
+          <button
+            type="button"
+            aria-describedby="roster-csv-format"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <UploadCloud size={16} strokeWidth={2.2} />
             Choose CSV
           </button>
+          <span id="roster-csv-format" className="sr-only">
+            Expected columns: {TEMPLATE_HEADERS.join(', ')}. Column order does not matter and
+            common header variations are recognised automatically. Student numbers must be
+            numbers only, and year level must be 11, 12, or 13 — rows that do not meet this are
+            flagged before anything is imported.
+          </span>
           <input
             ref={fileInputRef}
             type="file"
@@ -241,13 +251,6 @@ export default function RosterImportManager() {
           />
         </div>
       </section>
-
-      <p className="student-management-hint">
-        Expected columns: {TEMPLATE_HEADERS.join(', ')}. Column order doesn't matter and common header
-        variations (e.g. &quot;Student ID&quot;, &quot;Surname&quot;) are recognised automatically.
-        Student numbers must be numbers only, and year level must be 11, 12, or 13 &mdash; rows that
-        don't meet this are flagged before anything is imported.
-      </p>
 
       {notice && (
         <p className={`action-notice ${notice.type === 'error' ? 'is-error' : 'is-success'}`} role={notice.type === 'error' ? 'alert' : 'status'}>

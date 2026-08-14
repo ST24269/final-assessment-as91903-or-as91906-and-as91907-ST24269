@@ -219,7 +219,7 @@ export default function AdminEmailManager() {
             <span>Preview</span>
             <strong>{form.subject.trim() || 'No subject yet'}</strong>
             <em>{recipientPreview}</em>
-            <p>{form.message.trim() || 'Your message preview will appear here before sending.'}</p>
+            <p>{form.message.trim()}</p>
           </aside>
         </form>
       </section>
