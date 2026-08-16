@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
+const { isValidEmailAddress, sendEmail } = require('../utils/email')
 
 const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 
@@ -17,6 +18,80 @@ function publicCheckin(row) {
     student: row.students || null,
     last_known_class: row.classes || null,
   }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// Every teacher/admin login, every active student's roster email, plus the
+// login email of any active student who has a Tago account - the whole-
+// school broadcast list for emergency start/end notifications. Both
+// student email sources are included because editing a student's roster
+// email (students.email, via StudentsManager) does not update their
+// existing login email (profiles.email) - the two can drift apart, and
+// for a safety alert it's better to email both than silently drop one.
+async function collectEmergencyRecipients() {
+  const [{ data: staffProfiles }, { data: activeStudents }, { data: studentLinks }] = await Promise.all([
+    supabase.from('profiles').select('email').in('role', ['teacher', 'admin']),
+    supabase.from('students').select('id, email').eq('account_status', 'active'),
+    supabase.from('student_profiles').select('student_id, profiles(email)'),
+  ])
+
+  const activeStudentIds = new Set((activeStudents || []).map((row) => row.id))
+  const linkedActiveStudentEmails = (studentLinks || [])
+    .filter((row) => activeStudentIds.has(row.student_id))
+    .map((row) => row.profiles?.email)
+
+  const emails = [
+    ...(staffProfiles || []).map((row) => row.email),
+    ...(activeStudents || []).map((row) => row.email),
+    ...linkedActiveStudentEmails,
+  ]
+    .map((email) => String(email || '').trim())
+    .filter((email) => email && isValidEmailAddress(email))
+    .map((email) => email.toLowerCase())
+
+  return [...new Set(emails)]
+}
+
+async function notifyEmergencyStarted(event) {
+  const recipients = await collectEmergencyRecipients()
+  if (!recipients.length) return { sent: false, error: 'No recipients with a valid email address.' }
+
+  const startedAt = new Date(event.started_at).toLocaleString('en-NZ', { dateStyle: 'medium', timeStyle: 'short' })
+  const subject = 'Emergency alert: school-wide roll call in progress'
+  const text = [
+    'An emergency has been declared at your school.',
+    `Started: ${startedAt}`,
+    '',
+    'Teachers: go to your Tago dashboard now and complete a roll call for your current class.',
+    "Students and staff: follow your school's standard emergency procedures until an all-clear is given.",
+  ].join('\n')
+  const html = `
+    <p><strong>An emergency has been declared at your school.</strong></p>
+    <p>Started: ${escapeHtml(startedAt)}</p>
+    <p><strong>Teachers:</strong> go to your Tago dashboard now and complete a roll call for your current class.</p>
+    <p>Students and staff: follow your school's standard emergency procedures until an all-clear is given.</p>
+  `.trim()
+
+  return sendEmail({ to: recipients, subject, text, html })
+}
+
+async function notifyEmergencyEnded(event) {
+  const recipients = await collectEmergencyRecipients()
+  if (!recipients.length) return { sent: false, error: 'No recipients with a valid email address.' }
+
+  const subject = 'All clear: emergency roll call has ended'
+  const text = 'The emergency has ended and the roll call is complete. Normal school activities may resume.'
+  const html = `<p>${text}</p>`
+
+  return sendEmail({ to: recipients, subject, text, html })
 }
 
 async function logAudit(action, actorProfileId, actorEmail, description, metadata = {}) {
@@ -43,21 +118,196 @@ async function getActiveEvent() {
   return data || null
 }
 
-// GET /api/emergency/active - current event + checkins, staff only
+// Enrolled (active-student) ids for a class - the actual roster a manual
+// roll call should walk, independent of whether anyone has an open
+// session right now. last_known_class_id (set from open sessions at the
+// moment the emergency started) is too sparse to rely on: most classes
+// won't have one yet, which used to make an unfiltered class look like
+// "everyone accounted for" when really nobody had been checked at all.
+async function getEnrolledStudentIds(classId) {
+  const { data, error } = await supabase
+    .from('enrolments')
+    .select('student_id')
+    .eq('class_id', classId)
+
+  if (error) throw new Error(error.message)
+  return (data || []).map((row) => row.student_id)
+}
+
+// GET /api/emergency/active - current event + checkins, staff only.
+// Optional ?class_id= scopes the checkins to one class's enrolled roster
+// (used by the per-class manual roll call view).
 router.get('/active', authenticateUser, requireRole('teacher', 'admin'), async (req, res) => {
   try {
     const event = await getActiveEvent()
     if (!event) return res.json({ event: null, checkins: [] })
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('emergency_checkins')
       .select(checkinSelect)
       .eq('event_id', event.id)
       .order('status', { ascending: true })
 
+    const classId = req.query.class_id ? String(req.query.class_id).trim() : ''
+    if (classId) {
+      const studentIds = await getEnrolledStudentIds(classId)
+      if (!studentIds.length) return res.json({ event, checkins: [] })
+      query = query.in('student_id', studentIds)
+    }
+
+    const { data, error } = await query
     if (error) return res.status(500).json({ error: error.message })
 
     res.json({ event, checkins: (data || []).map(publicCheckin) })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// GET /api/emergency/classes - per-class summary for the active event:
+// accounted/unaccounted counts, submission status, and whether the
+// requesting teacher currently has this class in session. Powers both the
+// teacher "find a class" search and the admin submission tracker.
+router.get('/classes', authenticateUser, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const event = await getActiveEvent()
+    if (!event) return res.status(409).json({ error: 'No active emergency roll call.' })
+
+    const search = String(req.query.search || '').trim()
+
+    let classQuery = supabase
+      .from('classes')
+      .select('id, name, subject, room, teacher_id, profiles(full_name)')
+      .order('name')
+
+    if (search) classQuery = classQuery.ilike('name', `%${search}%`)
+
+    const [{ data: classes, error: classError }, { data: checkins, error: checkinError }, { data: submissions, error: submissionError }, { data: enrolmentRows, error: enrolmentError }] = await Promise.all([
+      classQuery,
+      supabase.from('emergency_checkins').select('student_id, status').eq('event_id', event.id),
+      supabase
+        .from('emergency_class_submissions')
+        .select('class_id, submitted_at, accounted_count, unaccounted_count, submitted_by:submitted_by_profile_id(full_name)')
+        .eq('event_id', event.id),
+      supabase.from('enrolments').select('class_id, student_id'),
+    ])
+
+    if (classError) return res.status(500).json({ error: classError.message })
+    if (checkinError) return res.status(500).json({ error: checkinError.message })
+    if (submissionError) return res.status(500).json({ error: submissionError.message })
+    if (enrolmentError) return res.status(500).json({ error: enrolmentError.message })
+
+    let currentClassIds = new Set()
+    if (req.profile.role === 'teacher') {
+      const { data: openSessions, error: sessionError } = await supabase
+        .from('sessions')
+        .select('class_id')
+        .eq('teacher_id', req.profile.id)
+        .is('ended_at', null)
+
+      if (sessionError) return res.status(500).json({ error: sessionError.message })
+      currentClassIds = new Set((openSessions || []).map((row) => row.class_id))
+    }
+
+    const submissionByClass = new Map((submissions || []).map((row) => [row.class_id, row]))
+    const statusByStudent = new Map((checkins || []).map((row) => [row.student_id, row.status]))
+
+    const studentIdsByClass = new Map()
+    for (const row of enrolmentRows || []) {
+      if (!studentIdsByClass.has(row.class_id)) studentIdsByClass.set(row.class_id, [])
+      studentIdsByClass.get(row.class_id).push(row.student_id)
+    }
+
+    const result = (classes || []).map((classRow) => {
+      const submission = submissionByClass.get(classRow.id)
+      // Only enrolled students who are part of the active roll call (i.e.
+      // active at the time the emergency started) count towards the roster.
+      const classCounts = (studentIdsByClass.get(classRow.id) || []).reduce((acc, studentId) => {
+        const status = statusByStudent.get(studentId)
+        if (!status) return acc
+        acc.total += 1
+        acc[status === 'accounted' ? 'accounted' : 'unaccounted'] += 1
+        return acc
+      }, { total: 0, accounted: 0, unaccounted: 0 })
+
+      return {
+        id: classRow.id,
+        name: classRow.name,
+        subject: classRow.subject,
+        room: classRow.room,
+        teacher: classRow.profiles ? { full_name: classRow.profiles.full_name } : null,
+        ...classCounts,
+        is_current: currentClassIds.has(classRow.id),
+        submitted: Boolean(submission),
+        submitted_at: submission?.submitted_at || null,
+        submitted_by: submission?.submitted_by?.full_name || null,
+      }
+    })
+
+    result.sort((a, b) => Number(b.is_current) - Number(a.is_current) || b.unaccounted - a.unaccounted)
+
+    res.json({ event, classes: result })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// POST /api/emergency/classes/:classId/submit - teacher (or admin) confirms
+// their roll call for one class is complete during the active event.
+router.post('/classes/:classId/submit', authenticateUser, requireRole('teacher', 'admin'), async (req, res) => {
+  try {
+    const event = await getActiveEvent()
+    if (!event) return res.status(409).json({ error: 'No active emergency roll call.' })
+
+    const classId = req.params.classId
+
+    const { data: classRow, error: classError } = await supabase
+      .from('classes')
+      .select('id, name')
+      .eq('id', classId)
+      .maybeSingle()
+
+    if (classError) return res.status(500).json({ error: classError.message })
+    if (!classRow) return res.status(404).json({ error: 'Class not found.' })
+
+    const studentIds = await getEnrolledStudentIds(classId)
+
+    const { data: checkins, error: checkinError } = studentIds.length
+      ? await supabase
+        .from('emergency_checkins')
+        .select('status')
+        .eq('event_id', event.id)
+        .in('student_id', studentIds)
+      : { data: [], error: null }
+
+    if (checkinError) return res.status(500).json({ error: checkinError.message })
+
+    const accountedCount = (checkins || []).filter((row) => row.status === 'accounted').length
+    const unaccountedCount = (checkins || []).length - accountedCount
+
+    const { data: submission, error: submissionError } = await supabase
+      .from('emergency_class_submissions')
+      .upsert([{
+        event_id: event.id,
+        class_id: classId,
+        submitted_by_profile_id: req.profile.id,
+        submitted_at: new Date().toISOString(),
+        accounted_count: accountedCount,
+        unaccounted_count: unaccountedCount,
+      }], { onConflict: 'event_id,class_id' })
+      .select('class_id, submitted_at, accounted_count, unaccounted_count')
+      .single()
+
+    if (submissionError) return res.status(500).json({ error: submissionError.message })
+
+    await logAudit('emergency_class_submitted', req.profile.id, req.profile.email, `Submitted emergency roll for ${classRow.name}`, {
+      eventId: event.id,
+      classId,
+      accountedCount,
+      unaccountedCount,
+    })
+
+    res.status(201).json({ submission })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -108,12 +358,16 @@ router.post('/start', authenticateUser, requireRole('admin'), async (req, res) =
       if (checkinError) return res.status(500).json({ error: checkinError.message })
     }
 
+    const notifyResult = await notifyEmergencyStarted(event)
+
     await logAudit('emergency_started', req.profile.id, req.profile.email, 'Started emergency roll call', {
       eventId: event.id,
       studentCount: rows.length,
+      emailSent: notifyResult.sent,
+      emailError: notifyResult.error,
     })
 
-    res.status(201).json({ event, studentCount: rows.length })
+    res.status(201).json({ event, studentCount: rows.length, notification: notifyResult })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -133,9 +387,15 @@ router.post('/:id/end', authenticateUser, requireRole('admin'), async (req, res)
     if (error) return res.status(500).json({ error: error.message })
     if (!event) return res.status(404).json({ error: 'Active emergency event not found.' })
 
-    await logAudit('emergency_ended', req.profile.id, req.profile.email, 'Ended emergency roll call', { eventId: event.id })
+    const notifyResult = await notifyEmergencyEnded(event)
 
-    res.json({ event })
+    await logAudit('emergency_ended', req.profile.id, req.profile.email, 'Ended emergency roll call', {
+      eventId: event.id,
+      emailSent: notifyResult.sent,
+      emailError: notifyResult.error,
+    })
+
+    res.json({ event, notification: notifyResult })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

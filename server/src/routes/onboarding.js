@@ -17,6 +17,90 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 
+function generateTemporaryPassword() {
+  return `Tago-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+function getFrontendUrl() {
+  return (
+    process.env.FRONTEND_URL ||
+    process.env.CLIENT_URL ||
+    process.env.APP_URL ||
+    'http://localhost:5173'
+  ).replace(/\/+$/, '')
+}
+
+// Creates a Supabase Auth login for a newly-imported student and emails them
+// a temporary password + sign-in link. Skipped if the student already has a
+// linked login, so re-importing an existing roster never resets a password
+// or double-creates an account.
+async function provisionStudentLogin(student, email, fullName) {
+  const { data: existingLink } = await supabase
+    .from('student_profiles')
+    .select('profile_id')
+    .eq('student_id', student.id)
+    .maybeSingle()
+
+  if (existingLink) {
+    return { accountCreated: false, accountEmailSent: false }
+  }
+
+  const temporaryPassword = generateTemporaryPassword()
+
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: temporaryPassword,
+    email_confirm: true,
+  })
+
+  if (authError) {
+    return { accountCreated: false, accountEmailSent: false, accountError: authError.message }
+  }
+
+  const authUserId = authData.user.id
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert([{ id: authUserId, email, full_name: fullName, role: 'student' }])
+
+  if (profileError) {
+    await supabase.auth.admin.deleteUser(authUserId)
+    return { accountCreated: false, accountEmailSent: false, accountError: profileError.message }
+  }
+
+  const { error: linkError } = await supabase
+    .from('student_profiles')
+    .insert([{ profile_id: authUserId, student_id: student.id }])
+
+  if (linkError) {
+    await supabase.auth.admin.deleteUser(authUserId)
+    return { accountCreated: false, accountEmailSent: false, accountError: linkError.message }
+  }
+
+  const loginUrl = `${getFrontendUrl()}/login/student`
+
+  const emailResult = await sendEmail({
+    to: email,
+    subject: 'Your Tago student account is ready',
+    text: [
+      `Kia ora ${fullName},`,
+      '',
+      'A Tago student account has been created for you.',
+      `Log in here: ${loginUrl}`,
+      `Email: ${email}`,
+      `Temporary password: ${temporaryPassword}`,
+      '',
+      'Please sign in and change your password from your profile security page.',
+    ].join('\n'),
+  })
+
+  return {
+    accountCreated: true,
+    accountEmailSent: emailResult.sent,
+    accountError: emailResult.sent ? null : emailResult.error,
+  }
+}
+
 // Student IDs are numeric only - strips any accidental prefix like "ST" and
 // rejects the row if what's left isn't a plain number.
 function validateImportStudentNumber(value) {
@@ -70,6 +154,9 @@ function validateImportEmail(value) {
 // 'pending' so they show up in the "Assign RFID Cards" tap-to-assign list
 // instead. Re-importing an existing student without a card column doesn't
 // touch their existing card or status either way.
+// A row with a studentEmail also gets a Supabase Auth login created (if it
+// doesn't already have one) and is emailed a temporary password + sign-in
+// link via provisionStudentLogin.
 // ---------------------------------------------------------------------
 router.post('/import-roster', async (req, res) => {
   const { rows } = req.body
@@ -181,12 +268,18 @@ router.post('/import-roster', async (req, res) => {
         timetableCount = await importStudentTimetable(student.id, row.icsUrl)
       }
 
+      let accountResult = {}
+      if (validatedEmail) {
+        accountResult = await provisionStudentLogin(student, validatedEmail, fullName)
+      }
+
       results.push({
         row,
         status: 'success',
         studentId: student.id,
         timetableSlots: timetableCount,
         cardAssigned: Boolean(normalizedCardUid),
+        ...accountResult,
       })
     } catch (error) {
       results.push({ row, status: 'failed', error: error.message })

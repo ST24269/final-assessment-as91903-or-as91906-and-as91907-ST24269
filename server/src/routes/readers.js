@@ -72,6 +72,19 @@ async function isRoomSessionActive(room) {
   return Boolean(data)
 }
 
+// Mirrors getActiveEvent() in emergency.js - kept local for the same
+// circular-require reason as isRoomSessionActive above.
+async function isEmergencyActive() {
+  const { data } = await supabase
+    .from('emergency_events')
+    .select('id')
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+
+  return Boolean(data)
+}
+
 // POST /api/readers/:id/heartbeat - Reader heartbeat/keepalive.
 // Hardware-authenticated by reader api_key (like attendance.js /scan),
 // so this must stay ABOVE router.use(authenticateUser).
@@ -117,11 +130,15 @@ router.post('/:id/heartbeat', async (req, res) => {
 
     // Let the reader know whether its room currently has a live session,
     // so it can chime a session-start sound without needing a card tap.
-    const sessionActive = await isRoomSessionActive(reader.room)
+    const [sessionActive, emergencyActive] = await Promise.all([
+      isRoomSessionActive(reader.room),
+      isEmergencyActive(),
+    ])
 
     res.json({
       success: true,
       session_active: sessionActive,
+      emergency_active: emergencyActive,
       pending_scans_count: pendingScans?.length || 0,
       pending_scans: pendingScans || []
     })

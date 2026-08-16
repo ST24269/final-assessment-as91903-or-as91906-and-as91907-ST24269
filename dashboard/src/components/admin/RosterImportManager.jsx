@@ -297,7 +297,10 @@ export default function RosterImportManager() {
             numbers only, and year level must be 11, 12, or 13 — rows that do not meet this are
             flagged before anything is imported. RFID card UID is optional - include it to assign
             that student's card immediately on import; leave it blank to assign the card later
-            from the Students tab.
+            from the Students tab. Student email is optional - include it to automatically create
+            that student's login and email them a temporary password and sign-in link; leave it
+            blank to skip account creation. Students who already have a login are left untouched
+            on re-import.
           </span>
           <input
             ref={fileInputRef}
@@ -398,7 +401,12 @@ export default function RosterImportManager() {
                   <strong>{`${result.row.firstName || ''} ${result.row.lastName || ''}`.trim() || `Row ${index + 1}`}</strong>
                   <span>
                     {result.status === 'success'
-                      ? (result.cardAssigned ? 'Imported successfully. RFID card assigned.' : 'Imported successfully.')
+                      ? [
+                          result.cardAssigned ? 'Imported successfully. RFID card assigned.' : 'Imported successfully.',
+                          result.accountCreated && result.accountEmailSent && 'Login email sent.',
+                          result.accountCreated && !result.accountEmailSent && `Account created, but login email failed${result.accountError ? `: ${result.accountError}` : '.'}`,
+                          !result.accountCreated && result.accountError && `Login not created: ${result.accountError}`,
+                        ].filter(Boolean).join(' ')
                       : result.error}
                   </span>
                 </div>

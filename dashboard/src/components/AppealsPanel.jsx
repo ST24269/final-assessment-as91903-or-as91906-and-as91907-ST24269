@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Pencil, RefreshCw, Search } from 'lucide-react'
-import { api, supabase } from '../api/client'
+import { api } from '../api/client'
 import { reasonCodeLabel } from '../config/reasonCodes'
 import Card from './Card'
 import ConfirmDialog from './ConfirmDialog'
@@ -25,10 +25,16 @@ function statusTone(status) {
   return 'status-late'
 }
 
+function todayDateString() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function AppealsPanel({ mode = 'teacher', compact = false, hideResolved = false, historyOnly = false }) {
   const [appeals, setAppeals] = useState([])
-  const [teachers, setTeachers] = useState([])
-  const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState(null)
   const [updatingId, setUpdatingId] = useState(null)
@@ -36,32 +42,15 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
   const [filters, setFilters] = useState({
     student: '',
     status: 'all',
-    kainga: 'all',
-    teacher: 'all',
     class_id: 'all',
-    date: '',
   })
   const [drafts, setDrafts] = useState({})
   const [confirmAction, setConfirmAction] = useState(null)
 
-  const buildAppealPath = () => {
-    const params = new URLSearchParams()
-    if (mode === 'admin') {
-      if (filters.student) params.set('student', filters.student)
-      if (filters.status !== 'all') params.set('status', filters.status)
-      if (filters.kainga !== 'all') params.set('kainga', filters.kainga)
-      if (filters.teacher !== 'all') params.set('teacher', filters.teacher)
-      if (filters.class_id !== 'all') params.set('class_id', filters.class_id)
-      if (filters.date) params.set('date', filters.date)
-    }
-
-    return `/api/appeals${params.toString() ? `?${params.toString()}` : ''}`
-  }
-
   const loadAppeals = async () => {
     setLoading(true)
     setNotice(null)
-    const data = await api.get(buildAppealPath())
+    const data = await api.get('/api/appeals')
     setLoading(false)
 
     if (data?.error) {
@@ -77,7 +66,7 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
     let cancelled = false
 
     async function loadInitialAppeals() {
-      const data = await api.get(buildAppealPath())
+      const data = await api.get('/api/appeals')
       if (cancelled) return
 
       if (data?.error) {
@@ -91,19 +80,7 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
 
     loadInitialAppeals()
 
-    if (mode === 'admin') {
-      Promise.all([
-        supabase.from('profiles').select('id, full_name').eq('role', 'teacher').order('full_name'),
-        supabase.from('classes').select('id, name, subject').order('name'),
-      ]).then(([teacherResult, classResult]) => {
-        if (cancelled) return
-        setTeachers(teacherResult.data || [])
-        setClasses(classResult.data || [])
-      })
-    }
-
     return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
   // Resolved appeals are done and dusted - they stay hidden from the active
@@ -114,10 +91,6 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
     if (hideResolved && filters.status !== 'resolved') return appeals.filter((appeal) => appeal.status !== 'resolved')
     return appeals
   }, [appeals, hideResolved, historyOnly, filters.status])
-
-  const kaingaOptions = useMemo(() => (
-    [...new Set(scopedAppeals.map((appeal) => appeal.student?.kainga).filter(Boolean))].sort()
-  ), [scopedAppeals])
 
   // Teacher mode has no server-side filters, so class options and matching
   // are derived from the teacher's own appeals instead of a school-wide list.
@@ -132,21 +105,41 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
   }, [scopedAppeals])
 
   const visibleAppeals = useMemo(() => {
-    if (mode !== 'teacher') return scopedAppeals
+    const search = filters.student.trim().toLowerCase()
+    const studentMatches = (appeal) => !search
+      || (appeal.student?.full_name || '').toLowerCase().includes(search)
+      || (appeal.student?.student_number || '').toLowerCase().includes(search)
 
-    return scopedAppeals.filter((appeal) => {
-      const statusMatches = filters.status === 'all' || appeal.status === filters.status
-      const classMatches = filters.class_id === 'all' || appeal.class?.id === filters.class_id
-      const search = filters.student.trim().toLowerCase()
-      const studentMatches = !search || (appeal.student?.full_name || '').toLowerCase().includes(search)
-        || (appeal.student?.student_number || '').toLowerCase().includes(search)
-      return statusMatches && classMatches && studentMatches
-    })
-  }, [scopedAppeals, filters, mode])
+    if (mode === 'teacher') {
+      return scopedAppeals.filter((appeal) => {
+        const statusMatches = filters.status === 'all' || appeal.status === filters.status
+        const classMatches = filters.class_id === 'all' || appeal.class?.id === filters.class_id
+        return statusMatches && classMatches && studentMatches(appeal)
+      })
+    }
+
+    if (mode === 'admin') {
+      const today = todayDateString()
+      return scopedAppeals.filter((appeal) => {
+        if (!studentMatches(appeal)) return false
+        // With no search, the open-appeals view defaults to today only. A
+        // search looks across every date, and the history view always shows
+        // every resolved appeal, so neither misses a match.
+        return historyOnly || search ? true : appeal.appeal_date === today
+      })
+    }
+
+    return scopedAppeals
+  }, [scopedAppeals, filters, mode, historyOnly])
+
+  // Admin's summary badges track what's on screen (today's appeals, or the
+  // active search), while teacher's badges stay pinned to the unfiltered
+  // workload so filtering the list doesn't hide how much is outstanding.
+  const summaryAppeals = mode === 'admin' ? visibleAppeals : scopedAppeals
 
   const pendingCount = useMemo(
-    () => scopedAppeals.filter((appeal) => appeal.status === 'pending').length,
-    [scopedAppeals],
+    () => summaryAppeals.filter((appeal) => appeal.status === 'pending').length,
+    [summaryAppeals],
   )
 
   const updateAppeal = async (appeal, status) => {
@@ -187,12 +180,12 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
 
   const content = (
     <div className="appeals-panel">
-      {!loading && scopedAppeals.length > 0 && (
+      {!loading && summaryAppeals.length > 0 && (
         <div className="appeals-summary-row">
           <span className={`appeals-summary-pill ${pendingCount > 0 ? 'is-attention' : ''}`}>
             {pendingCount} pending
           </span>
-          <span className="appeals-summary-pill">{scopedAppeals.length} total</span>
+          <span className="appeals-summary-pill">{summaryAppeals.length} total</span>
         </div>
       )}
 
@@ -231,51 +224,17 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
 
       {mode === 'admin' && (
         <div className="appeals-filter-row">
-          <input
-            value={filters.student}
-            onChange={(event) => setFilters((current) => ({ ...current, student: event.target.value }))}
-            placeholder="Filter by student"
-          />
-          <select
-            className="session-select"
-            value={filters.status}
-            onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-          >
-            <option value="all">All statuses</option>
-            {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
-          <select
-            className="session-select"
-            value={filters.kainga}
-            onChange={(event) => setFilters((current) => ({ ...current, kainga: event.target.value }))}
-          >
-            <option value="all">All kainga</option>
-            {kaingaOptions.map((kainga) => <option key={kainga} value={kainga}>{kainga}</option>)}
-          </select>
-          <select
-            className="session-select"
-            value={filters.teacher}
-            onChange={(event) => setFilters((current) => ({ ...current, teacher: event.target.value }))}
-          >
-            <option value="all">All teachers</option>
-            {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>)}
-          </select>
-          <select
-            className="session-select"
-            value={filters.class_id}
-            onChange={(event) => setFilters((current) => ({ ...current, class_id: event.target.value }))}
-          >
-            <option value="all">All classes</option>
-            {classes.map((classItem) => <option key={classItem.id} value={classItem.id}>{classItem.name} - {classItem.subject}</option>)}
-          </select>
-          <input
-            type="date"
-            value={filters.date}
-            onChange={(event) => setFilters((current) => ({ ...current, date: event.target.value }))}
-          />
+          <div className="appeals-search-field">
+            <Search size={14} strokeWidth={2.2} />
+            <input
+              value={filters.student}
+              onChange={(event) => setFilters((current) => ({ ...current, student: event.target.value }))}
+              placeholder="Search any appeal by student name or ID"
+            />
+          </div>
           <button type="button" className="btn-ghost" onClick={loadAppeals}>
             <RefreshCw size={15} strokeWidth={2.2} />
-            Apply
+            Refresh
           </button>
         </div>
       )}
@@ -292,9 +251,13 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
         <div className="portal-empty">
           <strong>No appeals to show</strong>
           <span>
-            {scopedAppeals.length > 0
-              ? 'No appeals match your search or filters.'
-              : (mode === 'admin' ? 'No appeals match these filters.' : (hideResolved ? 'No open appeals right now.' : 'Appeals for your classes or LA group will appear here.'))}
+            {mode === 'admin'
+              ? (filters.student.trim()
+                ? 'No appeals match that search.'
+                : (historyOnly ? 'No resolved appeals yet.' : 'No appeals came in today.'))
+              : (scopedAppeals.length > 0
+                ? 'No appeals match your search or filters.'
+                : (hideResolved ? 'No open appeals right now.' : 'Appeals for your classes or LA group will appear here.'))}
           </span>
         </div>
       ) : (

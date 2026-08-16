@@ -33,6 +33,7 @@ private:
   unsigned long uploadRetryIntervalMs;
 
   bool lastKnownSessionActive;
+  bool lastKnownEmergencyActive;
 
   const char* serverUrl;
   const char* readerApiKey;
@@ -62,7 +63,7 @@ public:
       isConnected(false), lastHeartbeat(0),
       currentBackoff(0), heartbeatPending(false),
       lastUploadAttempt(0), uploadRetryIntervalMs(8000),
-      lastKnownSessionActive(false) {}
+      lastKnownSessionActive(false), lastKnownEmergencyActive(false) {}
 
   void begin() {
     isConnected = (WiFi.status() == WL_CONNECTED);
@@ -127,6 +128,10 @@ public:
         lastKnownSessionActive = respDoc["session_active"].as<bool>();
       }
 
+      if (respDoc["emergency_active"].is<bool>()) {
+        lastKnownEmergencyActive = respDoc["emergency_active"].as<bool>();
+      }
+
       return true;
     }
 
@@ -136,6 +141,10 @@ public:
 
   bool isSessionActiveFromHeartbeat() {
     return lastKnownSessionActive;
+  }
+
+  bool isEmergencyActiveFromHeartbeat() {
+    return lastKnownEmergencyActive;
   }
 
   bool needsHeartbeat(unsigned long intervalMs) {

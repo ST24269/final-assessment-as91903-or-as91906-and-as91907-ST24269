@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, ShieldAlert } from 'lucide-react'
 
 import { api } from '../api/client'
 import SessionPanel from '../components/teacher/SessionPanel'
@@ -37,6 +37,8 @@ export default function TeacherDashboardPage({ session, profile }) {
   const [readers, setReaders] = useState([])
   const [selectedReader, setSelectedReader] = useState('')
   const [pendingPeriod, setPendingPeriod] = useState(null)
+
+  const [emergencyActive, setEmergencyActive] = useState(false)
 
 
 
@@ -161,8 +163,14 @@ export default function TeacherDashboardPage({ session, profile }) {
 
   return (
 
-    <div className="dashboard">
+    <div className={`dashboard${emergencyActive ? ' dashboard-emergency' : ''}`}>
 
+      {emergencyActive && (
+        <div className="emergency-topbar" role="alert">
+          <ShieldAlert size={16} strokeWidth={2.4} />
+          Emergency in progress - complete your roll call below
+        </div>
+      )}
 
       <header className="dashboard-header">
 
@@ -201,7 +209,7 @@ export default function TeacherDashboardPage({ session, profile }) {
       <main className="dashboard-main">
 
 
-        <EmergencyBanner />
+        <EmergencyBanner onStatusChange={setEmergencyActive} />
 
         <SessionPanel />
 

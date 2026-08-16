@@ -9,6 +9,7 @@ import ThemeToggle from '../components/ThemeToggle'
 import ProfileMenu from '../components/ProfileMenu'
 import NotificationBell from '../components/NotificationBell'
 import ErrorToast from '../components/ErrorToast'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 function formatSessionTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'time not set'
@@ -25,6 +26,7 @@ export default function TeacherSessionPage({ session, profile }) {
   const [ending, setEnding] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
 
   // Look up the session by id. Reuses the existing /api/sessions list
   // endpoint rather than assuming a single-session route exists.
@@ -168,12 +170,12 @@ export default function TeacherSessionPage({ session, profile }) {
             </div>
 
             {activeSession.ended_at ? (
-              <button onClick={submitAttendance} disabled={submitting} className="session-end-button session-submit-button">
+              <button onClick={() => setConfirmAction('submit')} disabled={submitting} className="session-end-button session-submit-button">
                 <Send size={14} strokeWidth={2.2} />
                 {submitting ? 'Submitting...' : 'Confirm & submit attendance'}
               </button>
             ) : (
-              <button onClick={endSession} disabled={ending} className="session-end-button">
+              <button onClick={() => setConfirmAction('end')} disabled={ending} className="session-end-button">
                 <Square size={14} strokeWidth={2.2} />
                 {ending ? 'Ending...' : 'End session'}
               </button>
@@ -190,6 +192,36 @@ export default function TeacherSessionPage({ session, profile }) {
       </main>
 
       <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />
+
+      {confirmAction === 'end' && (
+        <ConfirmDialog
+          eyebrow="End session"
+          title={activeSession.classes?.name || 'Class session'}
+          description="This stops the reader from taking any more scans for this session. You'll still be able to review the roll before submitting it."
+          confirmLabel="End session"
+          onClose={() => setConfirmAction(null)}
+          onConfirm={async () => {
+            await endSession()
+            setConfirmAction(null)
+          }}
+          busy={ending}
+        />
+      )}
+
+      {confirmAction === 'submit' && (
+        <ConfirmDialog
+          eyebrow="Submit attendance"
+          title={activeSession.classes?.name || 'Class session'}
+          description="This sends the roll to admin for review. Double-check the list below before confirming - you won't be able to edit it here afterwards."
+          confirmLabel="Confirm & submit"
+          onClose={() => setConfirmAction(null)}
+          onConfirm={async () => {
+            await submitAttendance()
+            setConfirmAction(null)
+          }}
+          busy={submitting}
+        />
+      )}
     </div>
   )
 }

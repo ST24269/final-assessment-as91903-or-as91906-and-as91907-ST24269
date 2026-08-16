@@ -196,6 +196,39 @@ void beepBootOK() {
   beep(120);
 }
 
+// Wailing siren for an active school-wide emergency: sweeps the buzzer
+// smoothly between lowFreq and highFreq on a ~2s up/down cycle, matching
+// the cadence of a real fire/civil-defence wail (a fast 1s cycle reads
+// more like a police "yelp" than an emergency alarm). Runs for ~10
+// seconds. This blocks loop() (same tradeoff as playStartupMelody()) -
+// RFID taps stop registering for the duration, which is intentional here:
+// the emergency alert takes priority over a card scan.
+void beepEmergencySiren() {
+  const unsigned long durationMs = 10000;
+  const int lowFreq = 500;
+  const int highFreq = 1200;
+  const int stepMs = 20;
+  const int stepFreq = 14;
+  unsigned long start = millis();
+
+  digitalWrite(LED_PIN, HIGH);
+
+  while (millis() - start < durationMs) {
+    for (int freq = lowFreq; freq <= highFreq && (millis() - start) < durationMs; freq += stepFreq) {
+      tone(BUZZER_PIN, freq);
+      delay(stepMs);
+    }
+    for (int freq = highFreq; freq >= lowFreq && (millis() - start) < durationMs; freq -= stepFreq) {
+      tone(BUZZER_PIN, freq);
+      delay(stepMs);
+    }
+  }
+
+  noTone(BUZZER_PIN);
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
+}
+
 void printBootConfig() {
   Serial.println("========================================");
   Serial.println("Device Configuration (from config.h)");
@@ -324,14 +357,22 @@ void loop() {
 
     if (network->needsHeartbeat(HEARTBEAT_INTERVAL_MS)) {
       bool wasActive = network->isSessionActiveFromHeartbeat();
+      bool wasEmergencyActive = network->isEmergencyActiveFromHeartbeat();
       network->sendHeartbeat();
       bool nowActive = network->isSessionActiveFromHeartbeat();
+      bool nowEmergencyActive = network->isEmergencyActiveFromHeartbeat();
 
       if (!wasActive && nowActive) {
         beepSessionStarted();
         sessionKnownActive = true;
       } else if (wasActive && !nowActive) {
         sessionKnownActive = false;
+      }
+
+      // Edge-triggered: siren fires once when an emergency starts, not on
+      // every heartbeat while it stays active.
+      if (!wasEmergencyActive && nowEmergencyActive) {
+        beepEmergencySiren();
       }
     }
 
