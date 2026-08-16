@@ -3,6 +3,7 @@ import AppFooter from './AppFooter'
 import ProfileMenu from './ProfileMenu'
 import TagoLogo from './TagoLogo'
 import ThemeToggle from './ThemeToggle'
+import NotificationBell from './NotificationBell'
 
 const ROLE_LABELS = {
   teacher: 'Teacher',
@@ -36,6 +37,7 @@ export default function Layout({ children, email, name, role, profileId }) {
                 {ROLE_LABELS[role] || role}
               </span>
             )}
+            <NotificationBell />
             <ThemeToggle />
             <ProfileMenu name={name} email={email} role={role} profileId={profileId} />
           </div>

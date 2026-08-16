@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, RefreshCw, Search } from 'lucide-react'
+import { CheckCircle2, Pencil, RefreshCw, Search } from 'lucide-react'
 import { api, supabase } from '../api/client'
+import { reasonCodeLabel } from '../config/reasonCodes'
 import Card from './Card'
+import ConfirmDialog from './ConfirmDialog'
+
+const DECISION_COPY = {
+  approved: { eyebrow: 'Approve appeal', confirmLabel: 'Approve' },
+  rejected: { eyebrow: 'Reject appeal', confirmLabel: 'Reject' },
+  resolved: { eyebrow: 'Resolve appeal', confirmLabel: 'Resolve' },
+}
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'resolved']
 const ATTENDANCE_STATUS_OPTIONS = ['present', 'late', 'absent', 'excused']
@@ -17,13 +25,14 @@ function statusTone(status) {
   return 'status-late'
 }
 
-export default function AppealsPanel({ mode = 'teacher', compact = false, hideResolved = false }) {
+export default function AppealsPanel({ mode = 'teacher', compact = false, hideResolved = false, historyOnly = false }) {
   const [appeals, setAppeals] = useState([])
   const [teachers, setTeachers] = useState([])
   const [classes, setClasses] = useState([])
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState(null)
   const [updatingId, setUpdatingId] = useState(null)
+  const [unlockedIds, setUnlockedIds] = useState(() => new Set())
   const [filters, setFilters] = useState({
     student: '',
     status: 'all',
@@ -33,6 +42,7 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
     date: '',
   })
   const [drafts, setDrafts] = useState({})
+  const [confirmAction, setConfirmAction] = useState(null)
 
   const buildAppealPath = () => {
     const params = new URLSearchParams()
@@ -96,13 +106,14 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
-  // Resolved appeals are done and dusted - the compact dashboard widget hides
-  // them, while the dedicated appeals page (hideResolved=false) keeps showing
-  // the full history.
-  const scopedAppeals = useMemo(
-    () => (hideResolved ? appeals.filter((appeal) => appeal.status !== 'resolved') : appeals),
-    [appeals, hideResolved],
-  )
+  // Resolved appeals are done and dusted - they stay hidden from the active
+  // list once resolved, and only reappear under "Appeal history" until a
+  // teacher clicks Edit to reopen one.
+  const scopedAppeals = useMemo(() => {
+    if (historyOnly) return appeals.filter((appeal) => appeal.status === 'resolved')
+    if (hideResolved && filters.status !== 'resolved') return appeals.filter((appeal) => appeal.status !== 'resolved')
+    return appeals
+  }, [appeals, hideResolved, historyOnly, filters.status])
 
   const kaingaOptions = useMemo(() => (
     [...new Set(scopedAppeals.map((appeal) => appeal.student?.kainga).filter(Boolean))].sort()
@@ -157,7 +168,21 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
     }
 
     setAppeals((current) => current.map((item) => (item.id === appeal.id ? data.appeal : item)))
-    setNotice({ type: 'success', text: `Appeal marked ${data.appeal.status}.` })
+    setUnlockedIds((current) => {
+      if (!current.has(appeal.id)) return current
+      const next = new Set(current)
+      next.delete(appeal.id)
+      return next
+    })
+
+    const emailNote = status === 'resolved'
+      ? (data.resolutionEmailSent ? ' Student and teacher notified by email.' : ' Resolution email may not have sent.')
+      : ''
+    setNotice({ type: 'success', text: `Appeal marked ${data.appeal.status}.${emailNote}` })
+  }
+
+  const unlockAppeal = (appealId) => {
+    setUnlockedIds((current) => new Set(current).add(appealId))
   }
 
   const content = (
@@ -276,8 +301,9 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
         <div className="appeals-list">
           {visibleAppeals.map((appeal) => {
             const draft = drafts[appeal.id] || {}
+            const isLocked = appeal.status === 'resolved' && !unlockedIds.has(appeal.id)
             return (
-              <article key={appeal.id} className="appeal-review-card">
+              <article key={appeal.id} className={`appeal-review-card ${isLocked ? 'is-locked' : ''}`}>
                 <header>
                   <div>
                     <p className="card-title">{appeal.student?.full_name || 'Student'}</p>
@@ -296,47 +322,74 @@ export default function AppealsPanel({ mode = 'teacher', compact = false, hideRe
                 <div className="appeal-meta-row">
                   <span>Current: {appeal.current_status || 'not recorded'}</span>
                   <span>Requested: {appeal.requested_status || 'not specified'}</span>
+                  {reasonCodeLabel(appeal.reason_code) && <span>{reasonCodeLabel(appeal.reason_code)}</span>}
                   <span>Notification: {appeal.notification_sent ? 'sent' : 'not sent'}</span>
                 </div>
 
-                <div className="appeal-decision-grid">
-                  <select
-                    className="session-select"
-                    value={draft.corrected_status || appeal.requested_status || appeal.current_status || ''}
-                    onChange={(event) => setDrafts((current) => ({
-                      ...current,
-                      [appeal.id]: { ...draft, corrected_status: event.target.value },
-                    }))}
-                  >
-                    <option value="">No correction</option>
-                    {ATTENDANCE_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                  <textarea
-                    value={draft.teacher_response || ''}
-                    onChange={(event) => setDrafts((current) => ({
-                      ...current,
-                      [appeal.id]: { ...draft, teacher_response: event.target.value },
-                    }))}
-                    placeholder="Decision comment"
-                  />
-                </div>
+                {isLocked ? (
+                  <div className="appeal-actions">
+                    <button type="button" className="btn-ghost" onClick={() => unlockAppeal(appeal.id)}>
+                      <Pencil size={15} strokeWidth={2.2} />
+                      Edit
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="appeal-decision-grid">
+                      <select
+                        className="session-select"
+                        value={draft.corrected_status || appeal.requested_status || appeal.current_status || ''}
+                        onChange={(event) => setDrafts((current) => ({
+                          ...current,
+                          [appeal.id]: { ...draft, corrected_status: event.target.value },
+                        }))}
+                      >
+                        <option value="">No correction</option>
+                        {ATTENDANCE_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                      <textarea
+                        value={draft.teacher_response || ''}
+                        onChange={(event) => setDrafts((current) => ({
+                          ...current,
+                          [appeal.id]: { ...draft, teacher_response: event.target.value },
+                        }))}
+                        placeholder="Decision comment"
+                      />
+                    </div>
 
-                <div className="appeal-actions">
-                  <button type="button" onClick={() => updateAppeal(appeal, 'approved')} disabled={updatingId === appeal.id}>
-                    <CheckCircle2 size={15} strokeWidth={2.2} />
-                    Approve
-                  </button>
-                  <button type="button" className="btn-ghost" onClick={() => updateAppeal(appeal, 'rejected')} disabled={updatingId === appeal.id}>
-                    Reject
-                  </button>
-                  <button type="button" className="btn-ghost" onClick={() => updateAppeal(appeal, 'resolved')} disabled={updatingId === appeal.id}>
-                    Resolve
-                  </button>
-                </div>
+                    <div className="appeal-actions">
+                      <button type="button" onClick={() => setConfirmAction({ appeal, status: 'approved' })} disabled={updatingId === appeal.id}>
+                        <CheckCircle2 size={15} strokeWidth={2.2} />
+                        Approve
+                      </button>
+                      <button type="button" className="btn-ghost" onClick={() => setConfirmAction({ appeal, status: 'rejected' })} disabled={updatingId === appeal.id}>
+                        Reject
+                      </button>
+                      <button type="button" className="btn-ghost" onClick={() => setConfirmAction({ appeal, status: 'resolved' })} disabled={updatingId === appeal.id}>
+                        Resolve
+                      </button>
+                    </div>
+                  </>
+                )}
               </article>
             )
           })}
         </div>
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          eyebrow={DECISION_COPY[confirmAction.status].eyebrow}
+          title={confirmAction.appeal.student?.full_name || 'Student'}
+          description={`This marks the appeal as ${confirmAction.status} and notifies the student by email.`}
+          confirmLabel={DECISION_COPY[confirmAction.status].confirmLabel}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={async () => {
+            await updateAppeal(confirmAction.appeal, confirmAction.status)
+            setConfirmAction(null)
+          }}
+          busy={updatingId === confirmAction.appeal.id}
+        />
       )}
     </div>
   )

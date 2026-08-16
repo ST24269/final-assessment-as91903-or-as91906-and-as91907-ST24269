@@ -6,7 +6,7 @@ export default function AdminEmailManager() {
   const [students, setStudents] = useState([])
   const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
-  const [form, setForm] = useState({ recipientMode: 'visible', subject: '', message: '' })
+  const [form, setForm] = useState({ recipientMode: 'selected', subject: '', message: '' })
   const [notice, setNotice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)

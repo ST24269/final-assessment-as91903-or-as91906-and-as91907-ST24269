@@ -7,11 +7,11 @@ import {
   Plus,
   RefreshCw,
   Search,
-  ShieldAlert,
   Trash2,
   X,
 } from 'lucide-react'
 import { api, supabase } from '../../api/client'
+import ConfirmDialog from '../ConfirmDialog'
 
 const KAINGA_OPTIONS = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
 const YEAR_LEVELS = ['11', '12', '13']
@@ -128,6 +128,14 @@ function ActionNotice({ notice }) {
 
 function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, saving, student, onUploadPhoto, photoUploading, photoNotice }) {
   const isEdit = mode === 'edit'
+  const rfidInputRef = useRef(null)
+
+  useEffect(() => {
+    // A USB/desk RFID reader behaves like a keyboard - it just types the
+    // UID then Enter. Keep the field focused so onboarding a new student
+    // can end with a card tap instead of manual typing.
+    if (!isEdit) rfidInputRef.current?.focus()
+  }, [isEdit])
 
   return (
     <div className="student-modal-backdrop" role="presentation">
@@ -203,7 +211,14 @@ function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, sa
           {!isEdit && (
             <div className="login-field">
               <label htmlFor="student-rfid">RFID card ID</label>
-              <input id="student-rfid" value={form.rfid_card_uid} onChange={(event) => setForm((current) => ({ ...current, rfid_card_uid: event.target.value }))} placeholder="Optional" />
+              <input
+                id="student-rfid"
+                ref={rfidInputRef}
+                value={form.rfid_card_uid}
+                onChange={(event) => setForm((current) => ({ ...current, rfid_card_uid: event.target.value }))}
+                placeholder="Optional - tap a card to fill this in"
+              />
+              <span className="student-table-sub">Tap a card on the reader to auto-fill and assign it.</span>
             </div>
           )}
 
@@ -271,6 +286,14 @@ function StudentFormModal({ mode, form, setForm, teachers, onClose, onSubmit, sa
 
 function RfidModal({ student, form, setForm, onClose, onSubmit, saving }) {
   const needsCard = form.action === 'assign' || form.action === 'replace'
+  const rfidInputRef = useRef(null)
+
+  useEffect(() => {
+    // Same keyboard-wedge behaviour as the add-student form: keep the card
+    // field focused so a tap on the reader fills it in and (via the
+    // reader's trailing Enter) submits the assignment right away.
+    if (needsCard) rfidInputRef.current?.focus()
+  }, [needsCard, form.action])
 
   return (
     <div className="student-modal-backdrop" role="presentation">
@@ -298,7 +321,14 @@ function RfidModal({ student, form, setForm, onClose, onSubmit, saving }) {
           {needsCard && (
             <div className="login-field student-form-wide">
               <label htmlFor="rfid-card-id">RFID card ID</label>
-              <input id="rfid-card-id" value={form.rfid_card_uid} onChange={(event) => setForm((current) => ({ ...current, rfid_card_uid: event.target.value }))} />
+              <input
+                id="rfid-card-id"
+                ref={rfidInputRef}
+                value={form.rfid_card_uid}
+                onChange={(event) => setForm((current) => ({ ...current, rfid_card_uid: event.target.value }))}
+                placeholder="Tap a card on the reader..."
+              />
+              <span className="student-table-sub">Tap a card on the reader to auto-fill and assign it.</span>
             </div>
           )}
           <div className="student-danger-copy student-form-wide">
@@ -366,37 +396,16 @@ function ExportFieldsModal({ count, onClose, onExport }) {
   )
 }
 
-function ConfirmModal({ action, student, onClose, onConfirm, saving }) {
+function studentConfirmCopy(action, student) {
   const isDelete = action === 'delete'
-  return (
-    <div className="student-modal-backdrop" role="presentation">
-      <section className="student-modal student-modal-small" role="dialog" aria-modal="true" aria-labelledby="student-confirm-title">
-        <div className="student-modal-header">
-          <div>
-            <p className="card-title">{isDelete ? 'Permanent delete' : 'Disable student'}</p>
-            <h3 id="student-confirm-title">{student.full_name}</h3>
-          </div>
-          <button type="button" className="student-icon-button" onClick={onClose} aria-label="Close">
-            <X size={18} strokeWidth={2.2} />
-          </button>
-        </div>
-        <div className="student-danger-copy">
-          <ShieldAlert size={18} strokeWidth={2.2} />
-          <p>
-            {isDelete
-              ? 'If this student has attendance history, Tago will disable the record instead of deleting it so logs are preserved.'
-              : 'Disabling a student deactivates their RFID card and removes them from active attendance scanning.'}
-          </p>
-        </div>
-        <div className="student-modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="account-danger-button" onClick={onConfirm} disabled={saving}>
-            {saving ? 'Working...' : isDelete ? 'Delete or disable' : 'Disable student'}
-          </button>
-        </div>
-      </section>
-    </div>
-  )
+  return {
+    eyebrow: isDelete ? 'Permanent delete' : 'Disable student',
+    title: student.full_name,
+    description: isDelete
+      ? 'If this student has attendance history, Tago will disable the record instead of deleting it so logs are preserved.'
+      : 'Disabling a student deactivates their RFID card and removes them from active attendance scanning.',
+    confirmLabel: isDelete ? 'Delete or disable' : 'Disable student',
+  }
 }
 
 export default function StudentsManager() {
@@ -419,6 +428,7 @@ export default function StudentsManager() {
   const [rfidModal, setRfidModal] = useState(null)
   const [rfidForm, setRfidForm] = useState({ action: 'assign', rfid_card_uid: '' })
   const [confirmModal, setConfirmModal] = useState(null)
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   const [exportModal, setExportModal] = useState(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoNotice, setPhotoNotice] = useState(null)
@@ -457,7 +467,7 @@ export default function StudentsManager() {
       setPhotoUploading(false)
     }
   }
-  const [emailForm, setEmailForm] = useState({ recipientMode: 'visible', subject: '', message: '' })
+  const [emailForm, setEmailForm] = useState({ recipientMode: 'selected', subject: '', message: '' })
   const [emailNotice, setEmailNotice] = useState(null)
   const [emailSending, setEmailSending] = useState(false)
   const emailCardRef = useRef(null)
@@ -701,24 +711,6 @@ export default function StudentsManager() {
     loadData({ silent: true })
   }
 
-  const resendConfirmation = async (student) => {
-    setBusyId(student.id)
-    setNotice(null)
-    const data = await api.post(`/api/students/manage/${student.id}/resend-confirmation`, {})
-    setBusyId(null)
-
-    if (data?.error) {
-      setNotice({ type: 'error', text: data.error })
-      return
-    }
-
-    setNotice({
-      type: data.emailSent ? 'success' : 'error',
-      text: data.emailSent ? 'Confirmation email sent.' : `Email not sent: ${data.emailError}`,
-    })
-    loadData({ silent: true })
-  }
-
   const toggleSelectAll = (checked) => {
     setSelectedIds(checked ? visibleStudents.map((student) => student.id) : [])
   }
@@ -736,6 +728,7 @@ export default function StudentsManager() {
       api.patch(`/api/students/manage/${student.id}/status`, { account_status: 'disabled' })
     )))
     setSaving(false)
+    setBulkConfirmOpen(false)
 
     const failed = results.find((result) => result?.error)
     if (failed) {
@@ -942,7 +935,7 @@ export default function StudentsManager() {
             <Mail size={16} strokeWidth={2.2} />
             Resend email
           </button>
-          <button type="button" className="account-danger-button" onClick={bulkDeactivate} disabled={saving}>
+          <button type="button" className="account-danger-button" onClick={() => setBulkConfirmOpen(true)} disabled={saving}>
             <Ban size={16} strokeWidth={2.2} />
             Disable selected
           </button>
@@ -1123,9 +1116,6 @@ export default function StudentsManager() {
                           <Mail size={14} strokeWidth={2.2} />
                           Email
                         </button>
-                        <button type="button" className="btn-ghost" onClick={() => resendConfirmation(student)} disabled={busyId === student.id}>
-                          Invite
-                        </button>
                         {student.account_status === 'active' ? (
                           <button type="button" className="btn-ghost" onClick={() => setConfirmModal({ action: 'disable', student })} disabled={busyId === student.id}>
                             <Ban size={14} strokeWidth={2.2} />
@@ -1199,12 +1189,25 @@ export default function StudentsManager() {
       )}
 
       {confirmModal && (
-        <ConfirmModal
-          action={confirmModal.action}
-          student={confirmModal.student}
+        <ConfirmDialog
+          {...studentConfirmCopy(confirmModal.action, confirmModal.student)}
+          tone="danger"
           onClose={() => setConfirmModal(null)}
           onConfirm={runConfirmAction}
-          saving={busyId === confirmModal.student.id}
+          busy={busyId === confirmModal.student.id}
+        />
+      )}
+
+      {bulkConfirmOpen && (
+        <ConfirmDialog
+          eyebrow="Disable students"
+          title={`${selectedStudents.length} student(s)`}
+          description="Disabling these students deactivates their RFID cards and removes them from active attendance scanning."
+          confirmLabel="Disable selected"
+          tone="danger"
+          onClose={() => setBulkConfirmOpen(false)}
+          onConfirm={bulkDeactivate}
+          busy={saving}
         />
       )}
 

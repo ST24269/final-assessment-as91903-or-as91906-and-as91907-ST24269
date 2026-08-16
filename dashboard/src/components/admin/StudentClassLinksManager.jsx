@@ -340,41 +340,7 @@ export default function StudentClassLinksManager() {
         </div>
       </section>
 
-      <section className="linking-grid">
-        <div className="linking-card">
-          <p className="card-title">Current links</p>
-          {!selectedStudent ? (
-            <p className="empty-state">Select a student.</p>
-          ) : currentLinks.length === 0 ? (
-            <div className="portal-empty">
-              <strong>{selectedStudent.full_name} has no linked classes.</strong>
-              <span>Use the class list above to add their first class.</span>
-            </div>
-          ) : (
-            <div className="linking-list">
-              {currentLinks.map((classItem) => (
-                <div key={classItem.id} className="linking-row">
-                  <div>
-                    <strong>{classLabel(classItem)}</strong>
-                    <span>
-                      {classItem.room ? `Room ${classItem.room}` : 'Room not set'} - {teacherLabel(classItem)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="account-danger-button"
-                    onClick={() => unlinkClass(classItem)}
-                    disabled={Boolean(savingId)}
-                  >
-                    <Trash2 size={14} strokeWidth={2.2} />
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
+      <section className="linking-manager">
         <div className="linking-card">
           <p className="card-title">Linked students</p>
           <div className="student-table-wrap">

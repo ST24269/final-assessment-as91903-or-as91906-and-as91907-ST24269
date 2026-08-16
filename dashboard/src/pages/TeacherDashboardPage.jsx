@@ -5,6 +5,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { api } from '../api/client'
 import SessionPanel from '../components/teacher/SessionPanel'
 import NotificationBell from '../components/teacher/NotificationBell'
+import EmergencyBanner from '../components/teacher/EmergencyBanner'
 import TeacherQuickMenu from '../components/teacher/TeacherQuickMenu'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
@@ -199,6 +200,8 @@ export default function TeacherDashboardPage({ session, profile }) {
 
       <main className="dashboard-main">
 
+
+        <EmergencyBanner />
 
         <SessionPanel />
 

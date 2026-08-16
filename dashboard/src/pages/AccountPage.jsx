@@ -2,14 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
-  Bell,
   Camera,
-  CheckCircle2,
   KeyRound,
   LogOut,
   Moon,
   Radio,
-  ShieldCheck,
   Sun,
 } from 'lucide-react'
 import { api, supabase } from '../api/client'
@@ -61,33 +58,6 @@ function maskId(value, visible = 4) {
 function shortStaffId(value) {
   if (!value) return 'Not set'
   return `STAFF-${String(value).slice(0, 8).toUpperCase()}`
-}
-
-function getStoredPreferences(profileId) {
-  if (typeof window === 'undefined' || !profileId) {
-    return { emailAlerts: true, absenceAlerts: true, contactEmail: '' }
-  }
-
-  const stored = (() => {
-    try {
-      return window.localStorage.getItem(`tago-account-settings-${profileId}`)
-    } catch {
-      return null
-    }
-  })()
-
-  if (!stored) return { emailAlerts: true, absenceAlerts: true, contactEmail: '' }
-
-  try {
-    return {
-      emailAlerts: true,
-      absenceAlerts: true,
-      contactEmail: '',
-      ...JSON.parse(stored),
-    }
-  } catch {
-    return { emailAlerts: true, absenceAlerts: true, contactEmail: '' }
-  }
 }
 
 function getStoredAvatar(profileId) {
@@ -146,7 +116,8 @@ export default function AccountPage({ session, profile, section = 'profile', set
     classes: [],
     attendance: [],
   })
-  const [preferences, setPreferences] = useState(() => getStoredPreferences(profile?.id))
+  const [contactEmail, setContactEmail] = useState(profile?.contact_email || '')
+  const [savingContactEmail, setSavingContactEmail] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState(() => getStoredAvatar(profile?.id))
   const [cardDetails, setCardDetails] = useState('')
   const [sendingCardRequest, setSendingCardRequest] = useState(null)
@@ -268,6 +239,7 @@ export default function AccountPage({ session, profile, section = 'profile', set
     const target = document.getElementById(`account-${activeSection}`)
     target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [activeSection, accountData.loading])
+
 
   const handleProfileSubmit = async (event) => {
     event.preventDefault()
@@ -426,15 +398,25 @@ export default function AccountPage({ session, profile, section = 'profile', set
     }
   }
 
-  const savePreferences = () => {
-    try {
-      window.localStorage.setItem(`tago-account-settings-${profile.id}`, JSON.stringify(preferences))
-    } catch {
-      setActionNotice('settings', 'error', 'This browser could not save settings locally.')
+  const handleContactEmailSubmit = async (event) => {
+    event.preventDefault()
+    setSavingContactEmail(true)
+    setActionNotice('settings', null, null)
+
+    const data = await api.patch('/api/users/me', {
+      full_name: profile?.full_name || fullName,
+      contact_email: contactEmail.trim(),
+    })
+
+    setSavingContactEmail(false)
+
+    if (data?.error) {
+      setActionNotice('settings', 'error', data.error)
       return
     }
 
-    setActionNotice('settings', 'success', 'Settings saved on this device.')
+    setProfile?.(data.profile)
+    setActionNotice('settings', 'success', 'Preferred contact email updated.')
   }
 
   const changeTheme = (nextTheme, event) => {
@@ -739,52 +721,37 @@ export default function AccountPage({ session, profile, section = 'profile', set
               </button>
             </div>
           </Card>
-
-          <Card title="Privacy notice">
-            <div className="account-privacy-note">
-              <ShieldCheck size={22} strokeWidth={2.3} />
-              <p>
-                RFID is used only to record attendance. Full RFID card IDs are not shown in the profile, and card data should only be changed by authorised staff.
-              </p>
-            </div>
-          </Card>
         </div>
       </section>
 
       <section id="account-settings" className="account-section">
         <div className="account-grid">
-          <Card title="Notification preferences">
-            <div className="account-settings-list">
-              <label className="account-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={preferences.emailAlerts}
-                  onChange={(event) => setPreferences((current) => ({ ...current, emailAlerts: event.target.checked }))}
-                />
-                <span><Bell size={16} strokeWidth={2.2} /> Email alerts</span>
-              </label>
-              <label className="account-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={preferences.absenceAlerts}
-                  onChange={(event) => setPreferences((current) => ({ ...current, absenceAlerts: event.target.checked }))}
-                />
-                <span><CheckCircle2 size={16} strokeWidth={2.2} /> Absence alerts</span>
-              </label>
-              <div className="login-field">
-                <label htmlFor="contact-email">Preferred contact email</label>
-                <input
-                  id="contact-email"
-                  type="email"
-                  value={preferences.contactEmail}
-                  onChange={(event) => setPreferences((current) => ({ ...current, contactEmail: event.target.value }))}
-                  placeholder={session.user.email}
-                />
+          {!isStudent && (
+            <Card title="Notification preferences">
+              <div className="account-settings-list">
+                <form className="account-form" onSubmit={handleContactEmailSubmit}>
+                  <div className="login-field">
+                    <label htmlFor="contact-email">Preferred contact email</label>
+                    <input
+                      id="contact-email"
+                      type="email"
+                      value={contactEmail}
+                      onChange={(event) => setContactEmail(event.target.value)}
+                      placeholder={session.user.email}
+                    />
+                    <span className="field-help">Used for appeal and notification emails instead of your login email.</span>
+                  </div>
+                  <div className="account-action-row">
+                    <button type="submit" disabled={savingContactEmail}>
+                      {savingContactEmail ? 'Saving...' : 'Save contact email'}
+                    </button>
+                  </div>
+                </form>
+
+                <ActionNotice notice={notices.settings} />
               </div>
-              <button type="button" onClick={savePreferences}>Save preferences</button>
-              <ActionNotice notice={notices.settings} />
-            </div>
-          </Card>
+            </Card>
+          )}
 
           <Card title="Display settings">
             <div className="account-choice-row" role="group" aria-label="Theme">

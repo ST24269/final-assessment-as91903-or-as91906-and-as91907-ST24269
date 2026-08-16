@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import Card from '../Card'
+import { REASON_CODES } from '../../config/reasonCodes'
 
 const STATUS_OPTIONS = ['present', 'late', 'absent', 'excused']
 
@@ -41,7 +42,25 @@ export default function AttendanceTable({ attendance, setAttendance, loading = f
     }
 
     setUpdating(null)
-  } 
+  }
+
+  const changeReason = async (id, reasonCode) => {
+    setUpdating(id)
+    setUpdateError(null)
+
+    const record = attendance.find((item) => item.id === id)
+    const data = await api.patch(`/api/attendance/${id}`, { status: record.status, reason_code: reasonCode || null })
+
+    if (data?.error) {
+      setUpdateError(data.error)
+    } else {
+      setAttendance((prev) => prev.map((item) => (
+        item.id === id ? { ...item, reason_code: reasonCode || null } : item
+      )))
+    }
+
+    setUpdating(null)
+  }
 
   const title = `Class register${attendance.length > 0 ? ` - ${attendance.length} scanned` : ''}`
 
@@ -64,7 +83,7 @@ export default function AttendanceTable({ attendance, setAttendance, loading = f
           <table className="attendance-table teacher-register-table">
             <thead>
               <tr>
-                {['Student', 'ID', 'Scanned', 'Status', 'Action', 'Note'].map((heading) => (
+                {['Student', 'ID', 'Scanned', 'Status', 'Action', 'Reason', 'Note'].map((heading) => (
                   <th key={heading}>{heading}</th>
                 ))}
               </tr>
@@ -93,6 +112,19 @@ export default function AttendanceTable({ attendance, setAttendance, loading = f
                     >
                       {STATUS_OPTIONS.map((status) => (
                         <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={record.reason_code || ''}
+                      disabled={updating === record.id}
+                      onChange={(event) => changeReason(record.id, event.target.value)}
+                      className="override-select"
+                    >
+                      <option value="">No reason</option>
+                      {REASON_CODES.map((reason) => (
+                        <option key={reason.value} value={reason.value}>{reason.label}</option>
                       ))}
                     </select>
                   </td>

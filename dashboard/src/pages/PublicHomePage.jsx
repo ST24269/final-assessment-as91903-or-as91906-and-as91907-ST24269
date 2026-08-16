@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { GraduationCap, ShieldCheck, UsersRound } from 'lucide-react'
 import PublicSiteLayout from '../components/PublicSiteLayout'
 import PrismArtifact from '../components/PrismArtifact'
 import Reveal from '../components/Reveal'
@@ -34,7 +33,7 @@ const benefitGroups = [
 const roleCards = [
   {
     role: 'Student',
-    Icon: GraduationCap,
+    mark: '01',
     summary: 'A simple portal for attendance visibility and RFID card support.',
     features: [
       "View today's attendance status",
@@ -47,7 +46,7 @@ const roleCards = [
   },
   {
     role: 'Teacher',
-    Icon: UsersRound,
+    mark: '02',
     summary: 'A live classroom register built around class sessions and scan review.',
     features: [
       'Start and end class sessions',
@@ -59,7 +58,7 @@ const roleCards = [
   },
   {
     role: 'Admin',
-    Icon: ShieldCheck,
+    mark: '03',
     summary: 'A control centre for school setup, RFID cards, users, and attendance insight.',
     features: [
       'Manage student records and student login accounts',
@@ -160,11 +159,11 @@ export default function PublicHomePage() {
             Separate experiences for students, teachers, and admins.
           </Reveal>
           <div className="vivid-role-grid">
-            {roleCards.map(({ role, Icon, summary, features }, index) => (
+            {roleCards.map(({ role, mark, summary, features }, index) => (
               <Reveal key={role} delay={index * 90}>
                 <Card className="vivid-role-card">
                   <CardHeader className="vivid-role-header">
-                    <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+                    <span className="vivid-role-mark" aria-hidden="true">{mark}</span>
                     <h3 className="vivid-role-title">{role}</h3>
                     <p className="vivid-role-summary">{summary}</p>
                   </CardHeader>

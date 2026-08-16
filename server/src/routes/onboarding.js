@@ -12,6 +12,10 @@ router.use(authenticateUser, requireRole('admin'))
 
 const STUDENT_NUMBER_PATTERN = /^[0-9]{1,20}$/
 const MAX_IMPORT_NAME_LENGTH = 15
+const CARD_ID_PATTERN = /^[A-Z0-9_-]{3,64}$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 
 // Student IDs are numeric only - strips any accidental prefix like "ST" and
 // rejects the row if what's left isn't a plain number.
@@ -45,12 +49,27 @@ function validateImportYearLevel(value) {
   return parsed
 }
 
+// Email is optional on import, but if a row has one it must look like an
+// actual address rather than silently saving junk into the students table.
+function validateImportEmail(value) {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) return null
+  if (!EMAIL_PATTERN.test(trimmed)) {
+    return { error: 'email must be a valid email address' }
+  }
+  return trimmed
+}
+
 // ---------------------------------------------------------------------
 // POST /api/onboarding/import-roster
 // Body: { rows: [{ firstName, lastName, age, yearLevel, kainga,
-//                   stNumber, guardianEmail, icsUrl }, ...] }
-// Upserts students as onboarding_status='pending' and pulls each
-// student's individual timetable feed.
+//                   stNumber, studentEmail, icsUrl, rfidCardUid }, ...] }
+// Upserts students and pulls each student's individual timetable feed.
+// A row with an rfidCardUid assigns that card immediately (onboarding_status
+// 'active'); a row without one leaves the student onboarding_status
+// 'pending' so they show up in the "Assign RFID Cards" tap-to-assign list
+// instead. Re-importing an existing student without a card column doesn't
+// touch their existing card or status either way.
 // ---------------------------------------------------------------------
 router.post('/import-roster', async (req, res) => {
   const { rows } = req.body
@@ -60,6 +79,7 @@ router.post('/import-roster', async (req, res) => {
   }
 
   const results = []
+  const seenCardUids = new Set()
 
   for (const row of rows) {
     const fullName = `${(row.firstName || '').trim()} ${(row.lastName || '').trim()}`.trim()
@@ -93,33 +113,81 @@ router.post('/import-roster', async (req, res) => {
       continue
     }
 
+    const validatedEmail = validateImportEmail(row.studentEmail)
+    if (validatedEmail?.error) {
+      results.push({ row, status: 'failed', error: validatedEmail.error })
+      continue
+    }
+
+    const normalizedCardUid = row.rfidCardUid ? normalizeCardUid(row.rfidCardUid) : null
+
+    if (normalizedCardUid && !CARD_ID_PATTERN.test(normalizedCardUid)) {
+      results.push({ row, status: 'failed', error: 'RFID card UID must be 3-64 characters and use letters, numbers, _ or - only.' })
+      continue
+    }
+
+    if (normalizedCardUid && seenCardUids.has(normalizedCardUid)) {
+      results.push({ row, status: 'failed', error: 'RFID card UID is used by more than one row in this file.' })
+      continue
+    }
+
     try {
+      if (normalizedCardUid) {
+        const { data: cardOwner } = await supabase
+          .from('students')
+          .select('full_name')
+          .eq('rfid_card_uid', normalizedCardUid)
+          .neq('student_number', validatedNumber)
+          .maybeSingle()
+
+        if (cardOwner) throw new Error(`RFID card is already assigned to ${cardOwner.full_name}.`)
+      }
+
+      const { data: existingStudent } = await supabase
+        .from('students')
+        .select('id')
+        .eq('student_number', validatedNumber)
+        .maybeSingle()
+
+      const payload = {
+        full_name: fullName,
+        student_number: validatedNumber,
+        age: row.age ? Number(row.age) : null,
+        year_level: validatedYear,
+        kainga: row.kainga || null,
+        email: validatedEmail || null,
+        ics_url: row.icsUrl || null,
+      }
+
+      if (normalizedCardUid) {
+        payload.rfid_card_uid = normalizedCardUid
+        payload.rfid_status = 'active'
+        payload.onboarding_status = 'active'
+      } else if (!existingStudent) {
+        payload.onboarding_status = 'pending'
+      }
+
       const { data: student, error: upsertError } = await supabase
         .from('students')
-        .upsert(
-          {
-            full_name: fullName,
-            student_number: validatedNumber,
-            age: row.age ? Number(row.age) : null,
-            year_level: validatedYear,
-            kainga: row.kainga || null,
-            guardian_email: row.guardianEmail || null,
-            ics_url: row.icsUrl || null,
-            onboarding_status: 'pending',
-          },
-          { onConflict: 'student_number' }
-        )
+        .upsert(payload, { onConflict: 'student_number' })
         .select()
         .single()
 
       if (upsertError) throw upsertError
+      if (normalizedCardUid) seenCardUids.add(normalizedCardUid)
 
       let timetableCount = 0
       if (row.icsUrl) {
         timetableCount = await importStudentTimetable(student.id, row.icsUrl)
       }
 
-      results.push({ row, status: 'success', studentId: student.id, timetableSlots: timetableCount })
+      results.push({
+        row,
+        status: 'success',
+        studentId: student.id,
+        timetableSlots: timetableCount,
+        cardAssigned: Boolean(normalizedCardUid),
+      })
     } catch (error) {
       results.push({ row, status: 'failed', error: error.message })
     }

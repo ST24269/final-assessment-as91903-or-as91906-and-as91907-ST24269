@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import TagoLogo from '../components/TagoLogo'
 import ThemeToggle from '../components/ThemeToggle'
 import ProfileMenu from '../components/ProfileMenu'
+import NotificationBell from '../components/teacher/NotificationBell'
 import Card from '../components/Card'
 import ErrorToast from '../components/ErrorToast'
 import StudentDetailModal from '../components/teacher/StudentDetailModal'
@@ -200,6 +201,7 @@ export default function ManualRollPage({ session, profile }) {
           <TagoLogo showWord size={18} markClassName="header-brand-icon" />
         </div>
         <div className="header-right">
+          <NotificationBell />
           <ThemeToggle />
           <ProfileMenu
             name={profile?.full_name}

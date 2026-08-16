@@ -6,6 +6,7 @@ const { sendEmail } = require('../utils/email')
 
 const VALID_APPEAL_STATUSES = ['pending', 'approved', 'rejected', 'resolved']
 const VALID_ATTENDANCE_STATUSES = ['present', 'late', 'absent', 'excused']
+const VALID_REASON_CODES = ['sick', 'approved_leave', 'school_activity', 'technical_issue', 'late', 'other']
 
 router.use(authenticateUser)
 
@@ -141,22 +142,24 @@ async function loadNotificationRecipients({ student, classId }) {
   if (student.la_teacher_id) {
     const { data: laTeacher } = await supabase
       .from('profiles')
-      .select('email, full_name')
+      .select('email, contact_email, full_name')
       .eq('id', student.la_teacher_id)
       .maybeSingle()
 
-    if (laTeacher?.email) recipients.push({ label: 'LA teacher', email: laTeacher.email })
+    const laTeacherEmail = laTeacher?.contact_email || laTeacher?.email
+    if (laTeacherEmail) recipients.push({ label: 'LA teacher', email: laTeacherEmail })
   }
 
   if (classId) {
     const { data: classRecord } = await supabase
       .from('classes')
-      .select('teacher_id, profiles(email, full_name)')
+      .select('teacher_id, profiles(email, contact_email, full_name)')
       .eq('id', classId)
       .maybeSingle()
 
-    if (classRecord?.profiles?.email) {
-      recipients.push({ label: 'Class teacher', email: classRecord.profiles.email })
+    const classTeacherEmail = classRecord?.profiles?.contact_email || classRecord?.profiles?.email
+    if (classTeacherEmail) {
+      recipients.push({ label: 'Class teacher', email: classTeacherEmail })
     }
   }
 
@@ -225,6 +228,7 @@ router.post('/', requireRole('student'), async (req, res) => {
     if (!student) return res.status(403).json({ error: 'This account is not linked to a student record.' })
 
     const reason = String(req.body.reason || '').trim()
+    const reasonCode = req.body.reason_code || null
     const comments = String(req.body.comments || '').trim()
     const requestedStatus = req.body.requested_status || null
     const attendanceId = req.body.attendance_id || null
@@ -237,6 +241,9 @@ router.post('/', requireRole('student'), async (req, res) => {
     if (!reason) return res.status(400).json({ error: 'Reason for appeal is required.' })
     if (requestedStatus && !VALID_ATTENDANCE_STATUSES.includes(requestedStatus)) {
       return res.status(400).json({ error: 'Requested status is invalid.' })
+    }
+    if (reasonCode && !VALID_REASON_CODES.includes(reasonCode)) {
+      return res.status(400).json({ error: 'Reason code is invalid.' })
     }
 
     let classRecord = attendanceRecord?.sessions?.classes || null
@@ -260,6 +267,7 @@ router.post('/', requireRole('student'), async (req, res) => {
       current_status: attendanceRecord?.status || req.body.current_status || null,
       requested_status: requestedStatus,
       reason,
+      reason_code: reasonCode,
       comments: comments || null,
       created_by_profile_id: req.profile.id,
     }
@@ -305,6 +313,29 @@ router.post('/', requireRole('student'), async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 })
+
+async function sendResolutionEmail({ appeal, student, classRecord, decidedByEmail }) {
+  const recipients = await loadNotificationRecipients({ student, classId: appeal.class_id })
+  const subject = `[Tago] Attendance appeal resolved - ${student.full_name}`
+  const classLabel = classRecord
+    ? `${classRecord.name} (${classRecord.subject})`
+    : 'Class not selected'
+
+  return sendEmail({
+    to: recipients,
+    subject,
+    text: [
+      'An attendance appeal has been resolved.',
+      '',
+      `Student: ${student.full_name}`,
+      `Date: ${appeal.appeal_date}`,
+      `Class: ${classLabel}`,
+      `Final status: ${appeal.requested_status || appeal.current_status || 'Not recorded'}`,
+      appeal.teacher_response ? `Teacher note: ${appeal.teacher_response}` : null,
+      decidedByEmail ? `Resolved by: ${decidedByEmail}` : null,
+    ].filter(Boolean).join('\n'),
+  })
+}
 
 router.patch('/:id', requireRole('teacher', 'admin'), async (req, res) => {
   try {
@@ -355,7 +386,29 @@ router.patch('/:id', requireRole('teacher', 'admin'), async (req, res) => {
       teacherResponse,
     })
 
-    res.json({ appeal: publicAppeal(data) })
+    let emailResult = null
+    if (status === 'resolved' && data.students) {
+      emailResult = await sendResolutionEmail({
+        appeal: data,
+        student: data.students,
+        classRecord: data.classes,
+        decidedByEmail: req.profile.email,
+      })
+
+      await supabase
+        .from('attendance_appeals')
+        .update({
+          notification_sent: emailResult.sent,
+          notification_error: emailResult.sent ? null : emailResult.error,
+        })
+        .eq('id', appeal.id)
+    }
+
+    res.json({
+      appeal: publicAppeal(emailResult ? { ...data, notification_sent: emailResult.sent, notification_error: emailResult.sent ? null : emailResult.error } : data),
+      resolutionEmailSent: emailResult ? emailResult.sent : null,
+      resolutionEmailError: emailResult && !emailResult.sent ? emailResult.error : null,
+    })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

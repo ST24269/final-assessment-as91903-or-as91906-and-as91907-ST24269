@@ -16,6 +16,7 @@ const menuItems = [
   { label: 'Home', ariaLabel: 'Go to public home page', to: '/' },
   { label: 'Features', ariaLabel: 'View role-based features', to: '/#features' },
   { label: 'Documentation', ariaLabel: 'Open project documentation', to: '/documentation' },
+  { label: 'Contact', ariaLabel: 'Send feedback', to: '/contact' },
 ]
 
 export default function PublicSiteLayout({ children }) {

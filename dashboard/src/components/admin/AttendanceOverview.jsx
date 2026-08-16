@@ -4,10 +4,13 @@ import {
   CalendarDays,
   CheckCircle2,
   ListFilter,
+  ShieldAlert,
   TriangleAlert,
   UsersRound,
 } from 'lucide-react'
 import { supabase } from '../../api/client'
+
+const DEFAULT_AT_RISK_THRESHOLD = 75
 
 const STATUS_LABELS = ['present', 'late', 'absent', 'excused']
 const STATUS_NAMES = {
@@ -114,6 +117,7 @@ export default function AttendanceOverview() {
   const [timeRange, setTimeRange] = useState('30d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [atRiskThreshold, setAtRiskThreshold] = useState(DEFAULT_AT_RISK_THRESHOLD)
 const [resolvingId, setResolvingId] = useState(null)
 
   const resolveFlag = async (record, decision) => {
@@ -161,7 +165,7 @@ const [resolvingId, setResolvingId] = useState(null)
               flag_reason,
               manual_override,
               students(full_name, student_number, year_level),
-              sessions(started_at, classes(id, name, subject, room))
+              sessions(started_at, ended_at, class_id, classes(id, name, subject, room))
             `)
             .order('scanned_at', { ascending: false })
             .limit(1000),
@@ -343,8 +347,88 @@ setClasses(classResult.data || [])
       .slice(0, 8)
   }, [filteredRecords])
 
+  // At-risk: attendance rate below the configurable threshold, with at
+  // least 3 counted records so one bad day doesn't misclassify a student.
+  const atRiskStudents = useMemo(() => {
+    const grouped = new Map()
+
+    filteredRecords.forEach((record) => {
+      const id = record.student_id || record.id
+      if (!grouped.has(id)) {
+        grouped.set(id, { id, name: getStudentName(record), number: record.students?.student_number || '-', records: [] })
+      }
+      grouped.get(id).records.push(record)
+    })
+
+    return [...grouped.values()]
+      .map((group) => ({ ...group, ...getAttendanceRate(group.records) }))
+      .filter((group) => group.counted >= 3 && group.rate !== null && group.rate < atRiskThreshold)
+      .sort((a, b) => a.rate - b.rate)
+  }, [filteredRecords, atRiskThreshold])
+
   const flaggedRecords = useMemo(() => (
     filteredRecords.filter((record) => record.flagged).slice(0, 5)
+  ), [filteredRecords])
+
+  // Impossible attendance: the same student marked present/late in two
+  // different classes whose session windows overlap.
+  const impossibleAttendance = useMemo(() => {
+    const byStudent = new Map()
+
+    filteredRecords.forEach((record) => {
+      if (record.status !== 'present' && record.status !== 'late') return
+      const start = record.sessions?.started_at
+      if (!start) return
+
+      const id = record.student_id
+      if (!byStudent.has(id)) byStudent.set(id, [])
+      byStudent.get(id).push({
+        record,
+        classId: record.sessions?.class_id || getClassId(record),
+        className: getClassName(record),
+        start: new Date(start),
+        end: record.sessions?.ended_at ? new Date(record.sessions.ended_at) : new Date(new Date(start).getTime() + 60 * 60 * 1000),
+      })
+    })
+
+    const conflicts = []
+
+    byStudent.forEach((entries, studentId) => {
+      for (let i = 0; i < entries.length; i += 1) {
+        for (let j = i + 1; j < entries.length; j += 1) {
+          const a = entries[i]
+          const b = entries[j]
+          if (a.classId === b.classId) continue
+          const overlaps = a.start < b.end && b.start < a.end
+          if (!overlaps) continue
+
+          conflicts.push({
+            id: `${a.record.id}-${b.record.id}`,
+            studentId,
+            name: getStudentName(a.record),
+            number: a.record.students?.student_number || '-',
+            classA: a.className,
+            classB: b.className,
+            timeA: a.start,
+            timeB: b.start,
+          })
+        }
+      }
+    })
+
+    return conflicts.sort((a, b) => b.timeA - a.timeA)
+  }, [filteredRecords])
+
+  // Unusual scan time: outside a plain-hours school day window.
+  const unusualTimeScans = useMemo(() => (
+    filteredRecords
+      .filter((record) => {
+        if (record.status !== 'present' && record.status !== 'late') return false
+        if (!record.scanned_at) return false
+        const hour = new Date(record.scanned_at).getHours()
+        return hour < 7 || hour >= 18
+      })
+      .slice(0, 10)
   ), [filteredRecords])
 
   const statCards = [
@@ -377,6 +461,18 @@ setClasses(classResult.data || [])
       value: summary.manual,
       detail: 'staff updates',
       Icon: CheckCircle2,
+    },
+    {
+      label: 'At risk',
+      value: atRiskStudents.length,
+      detail: `below ${atRiskThreshold}%`,
+      Icon: ShieldAlert,
+    },
+    {
+      label: 'Conflicts',
+      value: impossibleAttendance.length,
+      detail: 'overlapping classes',
+      Icon: TriangleAlert,
     },
   ]
 
@@ -418,6 +514,22 @@ setClasses(classResult.data || [])
               <option value="all">All classes</option>
               {classOptions.map((classItem) => (
                 <option key={classItem.id} value={classItem.id}>{classItem.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="analytics-filter">
+            <span>
+              <ShieldAlert size={13} strokeWidth={2.3} />
+              At-risk below
+            </span>
+            <select
+              className="override-select"
+              value={atRiskThreshold}
+              onChange={(event) => setAtRiskThreshold(Number(event.target.value))}
+            >
+              {[60, 65, 70, 75, 80, 85].map((value) => (
+                <option key={value} value={value}>{value}%</option>
               ))}
             </select>
           </label>
@@ -569,8 +681,93 @@ setClasses(classResult.data || [])
           <section className="analytics-card">
             <div className="analytics-card-header">
               <div>
+                <p className="card-title">At risk</p>
+              </div>
+              <span className="analytics-pill">{atRiskStudents.length}</span>
+            </div>
+
+            {atRiskStudents.length === 0 ? (
+              <div className="portal-empty">
+                <strong>None</strong>
+              </div>
+            ) : (
+              <div className="analytics-alert-list">
+                {atRiskStudents.map((student) => (
+                  <div key={student.id} className="analytics-alert-row">
+                    <span className="flag-badge">
+                      <ShieldAlert size={14} strokeWidth={2.2} />
+                      {student.rate}%
+                    </span>
+                    <strong>{student.name}</strong>
+                    <span>{student.number} - {student.attended}/{student.counted}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="analytics-card">
+            <div className="analytics-card-header">
+              <div>
+                <p className="card-title">Impossible attendance</p>
+              </div>
+              <span className="analytics-pill">{impossibleAttendance.length}</span>
+            </div>
+
+            {impossibleAttendance.length === 0 ? (
+              <div className="portal-empty">
+                <strong>None</strong>
+              </div>
+            ) : (
+              <div className="analytics-alert-list">
+                {impossibleAttendance.map((conflict) => (
+                  <div key={conflict.id} className="analytics-alert-row">
+                    <span className="flag-badge">
+                      <TriangleAlert size={14} strokeWidth={2.2} />
+                      Overlap
+                    </span>
+                    <strong>{conflict.name}</strong>
+                    <span>{conflict.number} - {conflict.classA} - {formatDateTime(conflict.timeA)}</span>
+                    <span>{conflict.classB} - {formatDateTime(conflict.timeB)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="analytics-card">
+            <div className="analytics-card-header">
+              <div>
+                <p className="card-title">Unusual scan times</p>
+              </div>
+              <span className="analytics-pill">{unusualTimeScans.length}</span>
+            </div>
+
+            {unusualTimeScans.length === 0 ? (
+              <div className="portal-empty">
+                <strong>None</strong>
+              </div>
+            ) : (
+              <div className="analytics-alert-list">
+                {unusualTimeScans.map((record) => (
+                  <div key={record.id} className="analytics-alert-row">
+                    <span className="flag-badge">
+                      <TriangleAlert size={14} strokeWidth={2.2} />
+                      {new Date(record.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <strong>{getStudentName(record)}</strong>
+                    <span>{getClassName(record)} - {formatDateTime(record.scanned_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="analytics-card">
+            <div className="analytics-card-header">
+              <div>
                 <p className="card-title">Student attendance</p>
-                <h4>Students needing attention</h4>
+                <h4>Needs attention</h4>
               </div>
               <span className="analytics-pill">{studentStats.length} shown</span>
             </div>

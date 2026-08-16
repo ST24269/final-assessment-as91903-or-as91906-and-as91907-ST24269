@@ -184,11 +184,16 @@
   transition: color 0.5s var(--ease-vivid), border-color 0.5s var(--ease-vivid);
 }
 
+.public-site .vivid-outline-button {
+  transition: color 0.3s var(--ease-vivid), border-color 0.3s var(--ease-vivid), transform 0.3s var(--ease-vivid);
+}
+
 .public-site .vivid-outline-button:hover,
 .public-site .vivid-outline-button:focus-visible {
   background: transparent;
   color: var(--vivid-muted);
   border-color: var(--vivid-muted);
+  transform: translateY(-1px);
 }
 
 .public-site .vivid-ghost-link {
@@ -394,6 +399,11 @@
 
 .public-site .vivid-role-card:hover {
   border-color: var(--vivid-muted);
+  transform: translateY(-3px);
+}
+
+.public-site .vivid-role-card {
+  transition: border-color 0.5s var(--ease-vivid), transform 0.5s var(--ease-vivid);
 }
 
 .public-site .vivid-role-header {
@@ -405,8 +415,15 @@
   border: none;
 }
 
-.public-site .vivid-role-header svg {
+.vivid-role-mark {
+  font-family: var(--mono, monospace);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   color: var(--vivid-muted);
+  border: 1px solid var(--vivid-hairline);
+  border-radius: 999px;
+  padding: 0.28rem 0.6rem;
 }
 
 .vivid-role-title {
@@ -555,6 +572,17 @@
 .vivid-doc-hero {
   padding: clamp(3rem, 8vw, 7rem) 0 clamp(2rem, 5vw, 4rem);
 }
+
+.vivid-contact-card {
+  max-width: 32rem;
+  margin: 0 auto clamp(3rem, 6vw, 5rem);
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+  border: 1px solid var(--vivid-hairline);
+  border-radius: var(--vivid-radius-card);
+}
+
+.vivid-contact-card .account-form { gap: 1.1rem; }
+.vivid-contact-card textarea { resize: vertical; min-height: 8rem; }
 
 .vivid-display-sm {
   margin: 0 0 clamp(1rem, 2vw, 1.5rem);

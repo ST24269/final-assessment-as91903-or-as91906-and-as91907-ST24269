@@ -2,6 +2,58 @@ const express = require('express')
 const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
+const { sendEmail } = require('../utils/email')
+
+const READER_OFFLINE_THRESHOLD_MS = 3 * 60 * 1000
+
+// Periodic health sweep: any active reader that's gone quiet for longer than
+// the offline threshold, and hasn't already been flagged offline, gets
+// marked offline and triggers a one-off admin email + notification. The DB
+// flip to 'offline' is what prevents re-sending the email every sweep -
+// the reader only re-alerts after it reconnects (heartbeat sets it back to
+// 'online') and then drops out again.
+async function checkReaderHealth() {
+  const { data: readers, error } = await supabase
+    .from('readers')
+    .select('id, label, room, last_seen, online_status')
+    .eq('active', true)
+    .neq('online_status', 'offline')
+
+  if (error) {
+    console.error('[reader-health] Failed to load readers:', error.message)
+    return
+  }
+
+  const cutoff = Date.now() - READER_OFFLINE_THRESHOLD_MS
+
+  const goneOffline = (readers || []).filter((reader) => (
+    !reader.last_seen || new Date(reader.last_seen).getTime() < cutoff
+  ))
+
+  for (const reader of goneOffline) {
+    await supabase.from('readers').update({ online_status: 'offline' }).eq('id', reader.id)
+
+    try {
+      await supabase.from('notifications').insert([{
+        recipient_role: 'admin',
+        type: 'error',
+        title: 'Reader went offline',
+        message: `Reader "${reader.label}"${reader.room ? ` in ${reader.room}` : ''} stopped responding and has been marked offline.`,
+      }])
+    } catch (notifyError) {
+      console.error('[reader-health] Failed to create offline notification:', notifyError.message)
+    }
+
+    try {
+      await sendEmail({
+        subject: `Reader offline: ${reader.label}`,
+        text: `Reader "${reader.label}"${reader.room ? ` in ${reader.room}` : ''} has not sent a heartbeat in over ${READER_OFFLINE_THRESHOLD_MS / 60000} minutes and has been marked offline. Check its power and Wi-Fi connection.`,
+      })
+    } catch (emailError) {
+      console.error('[reader-health] Failed to email admin about offline reader:', emailError.message)
+    }
+  }
+}
 
 // Mirrors the logic in attendance.js's findActiveSessionForRoom - kept
 // local here rather than importing from attendance.js to avoid a
@@ -312,3 +364,4 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
 })
 
 module.exports = router
+module.exports.checkReaderHealth = checkReaderHealth

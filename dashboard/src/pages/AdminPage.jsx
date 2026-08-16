@@ -11,6 +11,8 @@ import {
   Mail,
   MessageSquareWarning,
   ScanLine,
+  Settings,
+  ShieldAlert,
   UploadCloud,
   UserRound,
   UsersRound,
@@ -32,6 +34,8 @@ import AppealsManager from '../components/admin/AppealsManager'
 import TimetableManager from '../components/admin/TimetableManager'
 import StudentClassLinksManager from '../components/admin/StudentClassLinksManager'
 import AdminEmailManager from '../components/admin/AdminEmailManager'
+import EmergencyRollCall from '../components/admin/EmergencyRollCall'
+import SystemSettingsManager from '../components/admin/SystemSettingsManager'
 
 // Note: `description` and `tips` are kept on each tab because the "?"
 // help popover in the topbar still uses them - only the always-visible
@@ -138,6 +142,24 @@ const TABS = [
     description: 'Manage user roles',
     tips: [
       'Role changes take effect the next time that user signs in.',
+    ],
+  },
+  {
+    id: 'emergency',
+    label: 'Emergency',
+    Icon: ShieldAlert,
+    description: 'Start and run an emergency roll call',
+    tips: [
+      'Starting a roll call snapshots every active student as unaccounted, then a scan or manual mark clears them.',
+    ],
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    Icon: Settings,
+    description: 'Testing and rollout controls that affect every teacher',
+    tips: [
+      'Testing mode lets any teacher start any class at any time of day - turn it off once you\'re done testing.',
     ],
   },
 ]
@@ -355,6 +377,8 @@ export default function AdminPage({ session, profile }) {
               {tab === 'readers' && <ReadersManager />}
               {tab === 'analytics' && <AttendanceOverview />}
               {tab === 'users' && <UsersManager />}
+              {tab === 'emergency' && <EmergencyRollCall />}
+              {tab === 'settings' && <SystemSettingsManager />}
             </div>
           </section>
         </main>

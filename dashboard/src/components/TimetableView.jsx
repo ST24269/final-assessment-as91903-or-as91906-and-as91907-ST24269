@@ -89,7 +89,6 @@ function FocusCard({ label, period, onStartClass, startingId }) {
           <p>
             <Clock3 size={14} strokeWidth={2.2} />
             {dayLabel(period.day_of_week)} {timeLabel(period.start_time)}-{timeLabel(period.end_time)}
-            {period.period_number ? ` - Period ${period.period_number}` : ''}
           </p>
           <p>
             <MapPin size={14} strokeWidth={2.2} />
@@ -171,7 +170,7 @@ export default function TimetableView({
           <p>{title}</p>
           <h2 className="student-section-title">{subtitle}</h2>
         </div>
-        <span className="student-email-count">{sortedPeriods.length} periods</span>
+        <span className="student-email-count">{selectedPeriods.length} periods on {dayLabel(selectedDay)}</span>
       </div>
 
       {sortedPeriods.length === 0 ? (
@@ -207,28 +206,35 @@ export default function TimetableView({
                 <span>{emptyMessage}</span>
               </div>
             ) : (
-              selectedPeriods.map((period) => (
-                <div key={period.id} className="student-timetable-row timetable-period-row">
-                  <strong>
-                    <Clock3 size={15} strokeWidth={2.2} />
-                    {timeLabel(period.start_time)}-{timeLabel(period.end_time)}
-                    {period.period_number ? ` - Period ${period.period_number}` : ''}
-                  </strong>
-                  <span>
-                    <CalendarDays size={14} strokeWidth={2.2} />
-                    {periodClassLabel(period)} - {periodSubject(period)}
-                  </span>
-                  <span>
-                    <MapPin size={14} strokeWidth={2.2} />
-                    {periodRoom(period) || 'Room not set'}
-                  </span>
-                  <span>
-                    <UserRound size={14} strokeWidth={2.2} />
-                    {periodTeacher(period)}
-                  </span>
-                  <StartClassButton period={period} onStartClass={onStartClass ? handleStartClass : null} starting={startingId === period.id} />
-                </div>
-              ))
+              selectedPeriods.map((period) => {
+                const isCurrent = Number(selectedDay) === dayOfWeekFor() && focusPeriods.current?.id === period.id
+                const isNext = Number(selectedDay) === dayOfWeekFor() && focusPeriods.next?.id === period.id
+                return (
+                  <div
+                    key={period.id}
+                    className={`student-timetable-row timetable-period-row ${isCurrent ? 'is-current' : ''} ${isNext ? 'is-next' : ''}`}
+                  >
+                    <strong>
+                      <Clock3 size={15} strokeWidth={2.2} />
+                      {timeLabel(period.start_time)}-{timeLabel(period.end_time)}
+                    </strong>
+                    <span>
+                      <CalendarDays size={14} strokeWidth={2.2} />
+                      {periodClassLabel(period)} - {periodSubject(period)}
+                    </span>
+                    <span>
+                      <MapPin size={14} strokeWidth={2.2} />
+                      {periodRoom(period) || 'Room not set'}
+                    </span>
+                    <span>
+                      <UserRound size={14} strokeWidth={2.2} />
+                      {periodTeacher(period)}
+                    </span>
+                    {isCurrent && <span className="timetable-now-tag">Now</span>}
+                    <StartClassButton period={period} onStartClass={onStartClass ? handleStartClass : null} starting={startingId === period.id} />
+                  </div>
+                )
+              })
             )}
           </div>
         </>

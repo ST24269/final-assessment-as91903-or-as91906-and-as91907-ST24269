@@ -19,6 +19,8 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import PublicHomePage from './pages/PublicHomePage'
 import ProjectDocumentationPage from './pages/ProjectDocumentationPage'
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage'
+import ContactPage from './pages/ContactPage'
+import ScrollToTop from './components/ScrollToTop'
 import Loader from './components/Loader'
 import { canAccessAccountSection } from './config/permissions'
 
@@ -326,12 +328,14 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<PublicHomePage />} />
         <Route path="/home" element={<PublicHomePage />} />
         <Route path="/documentation" element={<ProjectDocumentationPage />} />
         <Route path="/project" element={<ProjectDocumentationPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/contact" element={<ContactPage />} />
 
         <Route
           path="/login"

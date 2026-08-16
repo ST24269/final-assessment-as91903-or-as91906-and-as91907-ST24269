@@ -5,6 +5,8 @@ const { authenticateUser, requireRole } = require('../middleware/auth')
 
 const normalizeCardUid = (uid) => String(uid).trim().toUpperCase()
 
+const REASON_CODES = ['sick', 'approved_leave', 'school_activity', 'technical_issue', 'late', 'other']
+
 
 // Log scan results
 async function logScan(readerId, rfidCardUid, scannedAt, result, processingTimeMs, errorMessage = null, extra = {}) {
@@ -101,6 +103,91 @@ async function getSessionAccess(req, sessionId) {
   }
 }
 
+
+const ONBOARDING_CARD_PATTERN = /^[A-Z0-9_-]{3,64}$/
+
+// Handles a reader tap while that reader has an open card-assignment window
+// (see onboarding.js's start-assignment). Binds the tapped card to the
+// pending student instead of marking attendance, then closes the window so
+// the reader goes back to normal scanning on its next tap.
+async function handleOnboardingTap(onboardingSession, normalizedUid, reader, res, startTime) {
+  const student = onboardingSession.students
+
+  if (!ONBOARDING_CARD_PATTERN.test(normalizedUid)) {
+    await logScan(reader.id, normalizedUid, new Date(), 'invalid_card', Date.now() - startTime, 'Card UID rejected during onboarding tap')
+    return res.status(400).json({ error: 'Card UID is not in a recognised format.' })
+  }
+
+  const { data: existingOwner, error: existingOwnerError } = await supabase
+    .from('students')
+    .select('id, full_name')
+    .eq('rfid_card_uid', normalizedUid)
+    .neq('id', student.id)
+    .maybeSingle()
+
+  if (existingOwnerError) {
+    return res.status(500).json({ error: existingOwnerError.message })
+  }
+
+  if (existingOwner) {
+    await logScan(
+      reader.id,
+      normalizedUid,
+      new Date(),
+      'duplicate',
+      Date.now() - startTime,
+      `Card already assigned to ${existingOwner.full_name}`,
+      { studentId: student.id }
+    )
+
+    return res.status(409).json({
+      error: `That card is already assigned to ${existingOwner.full_name}.`
+    })
+  }
+
+  const { error: studentUpdateError } = await supabase
+    .from('students')
+    .update({
+      rfid_card_uid: normalizedUid,
+      rfid_status: 'active',
+      onboarding_status: 'active',
+    })
+    .eq('id', student.id)
+
+  if (studentUpdateError) {
+    return res.status(500).json({ error: studentUpdateError.message })
+  }
+
+  await supabase
+    .from('onboarding_sessions')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      assigned_card_uid: normalizedUid,
+    })
+    .eq('id', onboardingSession.id)
+
+  await logScan(reader.id, normalizedUid, new Date(), 'success', Date.now() - startTime, null, { studentId: student.id })
+
+  try {
+    await supabase.from('audit_logs').insert([{
+      action: 'rfid_assigned_via_onboarding',
+      actor_profile_id: onboardingSession.admin_user_id,
+      target_student_id: student.id,
+      description: `Assigned RFID card to ${student.full_name} via reader tap`,
+      metadata: { readerId: reader.id, onboardingSessionId: onboardingSession.id },
+    }])
+  } catch (auditError) {
+    console.warn('[onboarding] Could not write audit log:', auditError.message)
+  }
+
+  return res.status(200).json({
+    success: true,
+    assigned: true,
+    student: student.full_name,
+    processing_time_ms: Date.now() - startTime,
+  })
+}
 
 
 // ESP32 scan endpoint
@@ -970,6 +1057,9 @@ router.post(
           error: 'Each record needs a student_id and a valid status (present, late, absent, excused)',
         })
       }
+      if (record.reason_code && !REASON_CODES.includes(record.reason_code)) {
+        return res.status(400).json({ error: 'Invalid reason code' })
+      }
     }
 
     const access = await getSessionAccess(req, req.params.session_id)
@@ -1014,6 +1104,7 @@ router.post(
       session_id: req.params.session_id,
       student_id: record.student_id,
       status: record.status,
+      reason_code: record.reason_code || null,
       scanned_at: now,
       source: 'manual',
       manual_override: true,
@@ -1245,7 +1336,8 @@ router.patch(
 
 
     const {
-      status
+      status,
+      reason_code: reasonCode
     } = req.body
 
 
@@ -1262,6 +1354,14 @@ router.patch(
           error: 'Invalid status'
         })
 
+    }
+
+
+
+    if (reasonCode && !REASON_CODES.includes(reasonCode)) {
+      return res.status(400).json({
+        error: 'Invalid reason code'
+      })
     }
 
 
@@ -1315,7 +1415,8 @@ router.patch(
       .from('attendance')
       .update({
         status,
-        manual_override: true
+        manual_override: true,
+        ...(reasonCode !== undefined ? { reason_code: reasonCode || null } : {})
       })
       .eq('id', req.params.id)
       .select()
@@ -1341,3 +1442,4 @@ router.patch(
 
 
 module.exports = router
+module.exports.ONBOARDING_CARD_PATTERN = ONBOARDING_CARD_PATTERN

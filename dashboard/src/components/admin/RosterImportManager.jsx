@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Download, FileUp, UploadCloud } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, CheckCircle2, Download, FileUp, RefreshCw, UploadCloud } from 'lucide-react'
 import { api } from '../../api/client'
 
-const TEMPLATE_HEADERS = ['First Name', 'Last Name', 'ST Number', 'Year Level', 'Kainga', 'Guardian Email']
+const TEMPLATE_HEADERS = ['First Name', 'Last Name', 'ST Number', 'Year Level', 'Kainga', 'Student Email', 'RFID Card UID']
 
 // Recognised header aliases, normalised (lowercased, letters/numbers only) -> internal field name.
 // This lets admins upload a CSV exported from the old system without renaming columns first.
@@ -23,13 +23,23 @@ const HEADER_ALIASES = {
   yeargroup: 'yearLevel',
   kainga: 'kainga',
   house: 'kainga',
-  guardianemail: 'guardianEmail',
-  parentemail: 'guardianEmail',
-  email: 'guardianEmail',
+  studentemail: 'studentEmail',
+  guardianemail: 'studentEmail',
+  parentemail: 'studentEmail',
+  email: 'studentEmail',
   age: 'age',
+  rfidcarduid: 'rfidCardUid',
+  rfidcard: 'rfidCardUid',
+  rfiduid: 'rfidCardUid',
+  rfid: 'rfidCardUid',
+  carduid: 'rfidCardUid',
+  cardid: 'rfidCardUid',
+  uid: 'rfidCardUid',
 }
 
 const VALID_KAINGA = ['Kea', 'Pukeko', 'Mokoroa', 'Pungawerere']
+const CARD_ID_PATTERN = /^[A-Z0-9_-]{3,64}$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function normalizeHeader(header) {
   return String(header || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -95,7 +105,7 @@ function mapRowsFromCsv(text) {
 
 // Mirrors the server-side validation in onboarding.js/students.js so admins
 // see problems immediately, before anything is sent to the API.
-function validateRow(row) {
+function validateRow(row, duplicateCardUids) {
   const errors = []
 
   if (!String(row.firstName || '').trim() || !String(row.lastName || '').trim()) {
@@ -124,11 +134,40 @@ function validateRow(row) {
     errors.push(`Kainga must be one of: ${VALID_KAINGA.join(', ')}`)
   }
 
+  if (row.studentEmail && !EMAIL_PATTERN.test(String(row.studentEmail).trim())) {
+    errors.push('Student email must be a valid email address')
+  }
+
+  if (row.rfidCardUid) {
+    const normalizedCardUid = String(row.rfidCardUid).trim().toUpperCase()
+    if (!CARD_ID_PATTERN.test(normalizedCardUid)) {
+      errors.push('RFID card UID must be 3-64 characters, letters/numbers/_/- only')
+    } else if (duplicateCardUids?.has(normalizedCardUid)) {
+      errors.push('RFID card UID is used by more than one row in this file')
+    }
+  }
+
   return errors
 }
 
+// Card UIDs that appear on more than one row - flagged per-row so an admin
+// doesn't have to scroll the whole preview to spot a copy-paste mistake.
+function findDuplicateCardUids(rows) {
+  const seen = new Set()
+  const duplicates = new Set()
+
+  rows.forEach((row) => {
+    if (!row.rfidCardUid) return
+    const normalized = String(row.rfidCardUid).trim().toUpperCase()
+    if (seen.has(normalized)) duplicates.add(normalized)
+    seen.add(normalized)
+  })
+
+  return duplicates
+}
+
 function downloadTemplate() {
-  const csv = `${TEMPLATE_HEADERS.join(',')}\nJane,Smith,123456,11,Kea,jane.guardian@example.com\n`
+  const csv = `${TEMPLATE_HEADERS.join(',')}\nJane,Smith,123456,11,Kea,jane.smith@example.com,0A1B2C3D\n`
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -147,10 +186,24 @@ export default function RosterImportManager() {
   const [notice, setNotice] = useState(null)
   const fileInputRef = useRef(null)
 
-  const rowsWithValidation = useMemo(
-    () => parsedRows.map((row) => ({ row, errors: validateRow(row) })),
-    [parsedRows],
-  )
+  const [pendingStudents, setPendingStudents] = useState([])
+  const [pendingLoading, setPendingLoading] = useState(true)
+
+  const loadPendingStudents = async () => {
+    setPendingLoading(true)
+    const data = await api.get('/api/onboarding/roster?status=pending')
+    setPendingLoading(false)
+    if (!data?.error) setPendingStudents(Array.isArray(data) ? data : [])
+  }
+
+  useEffect(() => {
+    loadPendingStudents()
+  }, [])
+
+  const rowsWithValidation = useMemo(() => {
+    const duplicateCardUids = findDuplicateCardUids(parsedRows)
+    return parsedRows.map((row) => ({ row, errors: validateRow(row, duplicateCardUids) }))
+  }, [parsedRows])
 
   const validRows = useMemo(
     () => rowsWithValidation.filter((item) => item.errors.length === 0).map((item) => item.row),
@@ -206,6 +259,8 @@ export default function RosterImportManager() {
       type: data.fail_count > 0 ? 'error' : 'success',
       text: `Imported ${data.success_count} of ${data.processed} student(s).${data.fail_count ? ` ${data.fail_count} failed.` : ''}`,
     })
+
+    if (data.success_count > 0) loadPendingStudents()
   }
 
   const reset = () => {
@@ -240,7 +295,9 @@ export default function RosterImportManager() {
             Expected columns: {TEMPLATE_HEADERS.join(', ')}. Column order does not matter and
             common header variations are recognised automatically. Student numbers must be
             numbers only, and year level must be 11, 12, or 13 — rows that do not meet this are
-            flagged before anything is imported.
+            flagged before anything is imported. RFID card UID is optional - include it to assign
+            that student's card immediately on import; leave it blank to assign the card later
+            from the Students tab.
           </span>
           <input
             ref={fileInputRef}
@@ -294,7 +351,8 @@ export default function RosterImportManager() {
                   <th>ST number</th>
                   <th>Year</th>
                   <th>Kainga</th>
-                  <th>Guardian email</th>
+                  <th>Student email</th>
+                  <th>RFID card UID</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,7 +375,8 @@ export default function RosterImportManager() {
                     <td>{row.stNumber || '-'}</td>
                     <td>{row.yearLevel || '-'}</td>
                     <td>{row.kainga || '-'}</td>
-                    <td className="student-id">{row.guardianEmail || '-'}</td>
+                    <td className="student-id">{row.studentEmail || '-'}</td>
+                    <td className="student-id">{row.rfidCardUid || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -337,7 +396,11 @@ export default function RosterImportManager() {
               <div key={index} className="student-audit-row">
                 <div>
                   <strong>{`${result.row.firstName || ''} ${result.row.lastName || ''}`.trim() || `Row ${index + 1}`}</strong>
-                  <span>{result.status === 'success' ? 'Imported successfully.' : result.error}</span>
+                  <span>
+                    {result.status === 'success'
+                      ? (result.cardAssigned ? 'Imported successfully. RFID card assigned.' : 'Imported successfully.')
+                      : result.error}
+                  </span>
                 </div>
                 <em>{result.status === 'success' ? 'Success' : 'Failed'}</em>
               </div>
@@ -345,6 +408,45 @@ export default function RosterImportManager() {
           </div>
         </section>
       )}
+
+      <section className="student-table-card">
+        <div className="student-table-head">
+          <div>
+            <p className="card-title">Missing RFID Cards</p>
+            <h3>Imported students who don't have a card yet.</h3>
+          </div>
+          <button type="button" className="btn-ghost" onClick={loadPendingStudents} disabled={pendingLoading}>
+            <RefreshCw size={16} strokeWidth={2.2} />
+            Refresh
+          </button>
+        </div>
+
+        {pendingStudents.length === 0 ? (
+          <div className="portal-empty">
+            <strong>No students are waiting for a card.</strong>
+            <span>Imported students who still need an RFID card will show up here.</span>
+          </div>
+        ) : (
+          <div className="student-table-wrap">
+            <table className="attendance-table student-management-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>ST number</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingStudents.map((student) => (
+                  <tr key={student.id}>
+                    <td>{student.full_name}</td>
+                    <td className="student-id">{student.student_number}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

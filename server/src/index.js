@@ -72,10 +72,14 @@ app.use('/api/users', require('./routes/users'))
 app.use('/api/appeals', require('./routes/appeals'))
 app.use('/api/timetable', require('./routes/timetable'))
 app.use('/api/classes', require('./routes/classes'))
-app.use('/api/readers', require('./routes/readers'))
+const readersRouter = require('./routes/readers')
+app.use('/api/readers', readersRouter)
 app.use('/api/onboarding', require('./routes/onboarding'))
+app.use('/api/settings', require('./routes/settings'))
 app.use('/api/errors', require('./routes/errors'))
 app.use('/api/notifications', require('./routes/notifications'))
+app.use('/api/feedback', require('./routes/feedback'))
+app.use('/api/emergency', require('./routes/emergency'))
 
 app.use(notFoundHandler)
 app.use(errorHandler)
@@ -86,4 +90,10 @@ app.listen(PORT, () => {
   if (!config.isProduction) {
     console.log(`Allowed CORS origins: ${config.corsOrigins.join(', ')}`)
   }
+
+  setInterval(() => {
+    readersRouter.checkReaderHealth().catch((error) => {
+      console.error('[reader-health] Sweep failed:', error.message)
+    })
+  }, 60 * 1000)
 })

@@ -825,6 +825,18 @@ router.patch('/manage/:id', requireRole('admin'), async (req, res) => {
     return res.status(400).json({ error: 'Enter a valid email address.' })
   }
 
+  if (email && email !== current.email) {
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .neq('id', current.profile_id || '00000000-0000-0000-0000-000000000000')
+      .maybeSingle()
+
+    if (existingProfileError) return res.status(500).json({ error: existingProfileError.message })
+    if (existingProfile) return res.status(409).json({ error: 'That email address is already in use by another account.' })
+  }
+
   const built = await buildStudentPayload({
     ...req.body,
     student_number: req.body.student_number || current.student_number,
@@ -845,13 +857,21 @@ router.patch('/manage/:id', requireRole('admin'), async (req, res) => {
   if (updateError) return res.status(500).json({ error: updateError.message })
 
   let warning = null
-  if (email && current.profile_id) {
-    const [{ error: profileError }, { error: authError }] = await Promise.all([
-      supabase.from('profiles').update({ email, full_name: built.payload.full_name }).eq('id', current.profile_id),
-      supabase.auth.admin.updateUserById(current.profile_id, { email }),
-    ])
+  if (email && current.profile_id && email !== current.email) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(current.profile_id, { email })
 
-    if (profileError || authError) warning = profileError?.message || authError?.message
+    if (authError) {
+      warning = authError.message
+    } else {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ email, full_name: built.payload.full_name })
+        .eq('id', current.profile_id)
+
+      if (profileError) warning = profileError.message
+    }
+  } else if (email && current.profile_id) {
+    await supabase.from('profiles').update({ full_name: built.payload.full_name }).eq('id', current.profile_id)
   } else if (email && !current.profile_id) {
     warning = 'Student record updated, but there is no linked login account to update email for.'
   } else if (current.profile_id) {
@@ -1148,73 +1168,101 @@ router.patch('/:id/assign-card', requireRole('admin'), async (req, res) => {
   res.json(data)
 })
 
+// Explicitly wipes every row scoped to one student_id, across every table that
+// references it. The schema already sets these FKs to ON DELETE CASCADE, but
+// deleting them up front makes the wipe explicit, scoped only to this one
+// student, and lets us surface exactly which table failed instead of a single
+// opaque error from the final `students` delete.
+async function purgeStudentData(studentId) {
+  const tables = [
+    'attendance_appeals',
+    'emergency_checkins',
+    'timetable_periods',
+    'timetable_slots',
+    'enrolments',
+    'attendance',
+    'student_profiles',
+  ]
+
+  for (const table of tables) {
+    const { error } = await supabase.from(table).delete().eq('student_id', studentId)
+    if (error && error.code !== '42P01') throw routeError(`Could not clear ${table} for this student: ${error.message}`, 500)
+  }
+}
+
 // DELETE student. Students with attendance history are disabled instead to preserve logs.
 router.delete('/:id', requireRole('admin'), async (req, res) => {
-  const current = await getEnrichedStudent(req.params.id).catch(() => null)
-  if (!current) return res.status(404).json({ error: 'Student not found' })
+  try {
+    const current = await getEnrichedStudent(req.params.id).catch(() => null)
+    if (!current) return res.status(404).json({ error: 'Student not found' })
 
-  const { count, error: countError } = await supabase
-    .from('attendance')
-    .select('id', { count: 'exact', head: true })
-    .eq('student_id', req.params.id)
+    const { count, error: countError } = await supabase
+      .from('attendance')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', req.params.id)
 
-  if (countError) return res.status(500).json({ error: countError.message })
+    if (countError) return res.status(500).json({ error: countError.message })
 
-  if (count > 0) {
-    const extended = await supportsExtendedStudentColumns()
-    if (!extended) {
-      return res.status(409).json({
-        error: 'Student has attendance history, so they can only be disabled after the student-management migration is applied.',
+    if (count > 0) {
+      const extended = await supportsExtendedStudentColumns()
+      if (!extended) {
+        return res.status(409).json({
+          error: 'Student has attendance history, so they can only be disabled after the student-management migration is applied.',
+        })
+      }
+
+      const update = { rfid_card_uid: null }
+      update.account_status = 'disabled'
+      update.rfid_status = 'inactive'
+      update.disabled_at = new Date().toISOString()
+
+      const { error } = await supabase.from('students').update(update).eq('id', req.params.id)
+      if (error) return res.status(500).json({ error: error.message })
+
+      await logAudit(req, 'student_disabled', req.params.id, `Disabled ${current.full_name} instead of deleting because attendance history exists.`)
+      const student = await getEnrichedStudent(req.params.id)
+      return res.json({
+        student,
+        disabled: true,
+        message: 'Student has attendance history, so they were disabled instead of deleted.',
       })
     }
 
-    const update = { rfid_card_uid: null }
-    update.account_status = 'disabled'
-    update.rfid_status = 'inactive'
-    update.disabled_at = new Date().toISOString()
+    const { data: linkedProfile, error: linkLookupError } = await supabase
+      .from('student_profiles')
+      .select('profile_id')
+      .eq('student_id', req.params.id)
+      .maybeSingle()
 
-    const { error } = await supabase.from('students').update(update).eq('id', req.params.id)
+    if (linkLookupError) return res.status(500).json({ error: linkLookupError.message })
+
+    await purgeStudentData(req.params.id)
+
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', req.params.id)
+
     if (error) return res.status(500).json({ error: error.message })
 
-    await logAudit(req, 'student_disabled', req.params.id, `Disabled ${current.full_name} instead of deleting because attendance history exists.`)
-    const student = await getEnrichedStudent(req.params.id)
-    return res.json({
-      student,
-      disabled: true,
-      message: 'Student has attendance history, so they were disabled instead of deleted.',
+    await logAudit(req, 'student_deleted', null, `Deleted student ${current.full_name}`)
+
+    let warning = null
+    if (linkedProfile?.profile_id) {
+      const { error: authError } = await supabase.auth.admin.deleteUser(linkedProfile.profile_id)
+      if (authError) warning = authError.message
+    }
+
+    res.json({
+      deleted: true,
+      message: warning
+        ? `Student deleted, but linked login could not be removed: ${warning}`
+        : 'Student and linked login deleted.',
+      warning,
     })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message })
   }
-
-  const { data: linkedProfile, error: linkLookupError } = await supabase
-    .from('student_profiles')
-    .select('profile_id')
-    .eq('student_id', req.params.id)
-    .maybeSingle()
-
-  if (linkLookupError) return res.status(500).json({ error: linkLookupError.message })
-
-  await logAudit(req, 'student_deleted', req.params.id, `Deleted student ${current.full_name}`)
-
-  const { error } = await supabase
-    .from('students')
-    .delete()
-    .eq('id', req.params.id)
-
-  if (error) return res.status(500).json({ error: error.message })
-
-  let warning = null
-  if (linkedProfile?.profile_id) {
-    const { error: authError } = await supabase.auth.admin.deleteUser(linkedProfile.profile_id)
-    if (authError) warning = authError.message
-  }
-
-  res.json({
-    deleted: true,
-    message: warning
-      ? `Student deleted, but linked login could not be removed: ${warning}`
-      : 'Student and linked login deleted.',
-    warning,
-  })
 })
 
 module.exports = router

@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
+const { getSystemSettings } = require('./settings')
 
 router.use(authenticateUser)
 
@@ -99,7 +100,26 @@ router.get('/submitted', requireRole('admin'), async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message })
 
-  res.json(data)
+  const sessions = data || []
+
+  const { data: counts, error: countsError } = sessions.length
+    ? await supabase
+      .from('attendance')
+      .select('session_id')
+      .in('session_id', sessions.map((session) => session.id))
+    : { data: [], error: null }
+
+  if (countsError) return res.status(500).json({ error: countsError.message })
+
+  const attendanceCountBySession = (counts || []).reduce((acc, row) => {
+    acc[row.session_id] = (acc[row.session_id] || 0) + 1
+    return acc
+  }, {})
+
+  res.json(sessions.map((session) => ({
+    ...session,
+    attendance_count: attendanceCountBySession[session.id] || 0,
+  })))
 })
 
 
@@ -157,8 +177,12 @@ router.post('/start', requireRole('teacher', 'admin'), async (req, res) => {
   }
 
   // Admins can start any class at any time (covers ad-hoc/admin corrections).
-  // Teachers are held to the timetable, within their own configurable buffer.
-  if (req.profile.role !== 'admin') {
+  // Teachers are held to the timetable, within their own configurable buffer -
+  // unless an admin has flipped on Testing Mode, which lifts that check for
+  // everyone so scanning can be tested without waiting for a real period.
+  const { testing_mode_enabled: testingModeEnabled } = await getSystemSettings()
+
+  if (req.profile.role !== 'admin' && !testingModeEnabled) {
     const bufferMinutes = Number.isInteger(req.profile.session_start_buffer_minutes)
       ? req.profile.session_start_buffer_minutes
       : 10
@@ -329,6 +353,24 @@ router.patch('/:id/end', requireRole('teacher', 'admin'), async (req, res) => {
     })
   }
 
+  try {
+    const { count: attendanceCount } = await supabase
+      .from('attendance')
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', data.id)
+
+    if (!attendanceCount) {
+      await supabase.from('notifications').insert([{
+        recipient_role: 'admin',
+        type: 'warning',
+        title: 'No attendance taken',
+        message: `${data.classes?.name || 'A class'} session ended with no attendance recorded (${data.profiles?.full_name || 'teacher'}).`,
+        session_id: data.id,
+      }])
+    }
+  } catch (notifyError) {
+    console.error('Failed to create no-attendance notification:', notifyError)
+  }
 
   res.json(data)
 })

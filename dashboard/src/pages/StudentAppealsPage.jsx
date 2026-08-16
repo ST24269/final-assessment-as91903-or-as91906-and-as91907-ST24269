@@ -5,6 +5,7 @@ import { api, supabase } from '../api/client'
 import Layout from '../components/Layout'
 import Card from '../components/Card'
 import Loader from '../components/Loader'
+import { REASON_CODES, reasonCodeLabel } from '../config/reasonCodes'
 
 const REQUESTED_STATUS_OPTIONS = [
   { value: 'present', label: 'Present - I was there' },
@@ -26,6 +27,7 @@ function defaultAppealForm() {
     attendance_id: '',
     requested_status: '',
     reason: '',
+    reason_code: '',
     comments: '',
   }
 }
@@ -358,6 +360,19 @@ export default function StudentAppealsPage({ session, profile }) {
                 </div>
 
                 <div className="login-field">
+                  <label htmlFor="appeal-reason-code">Reason code</label>
+                  <select
+                    id="appeal-reason-code"
+                    className="session-select"
+                    value={appealForm.reason_code}
+                    onChange={(event) => setAppealForm((current) => ({ ...current, reason_code: event.target.value }))}
+                  >
+                    <option value="">None</option>
+                    {REASON_CODES.map((code) => <option key={code.value} value={code.value}>{code.label}</option>)}
+                  </select>
+                </div>
+
+                <div className="login-field">
                   <label htmlFor="appeal-comments">Message</label>
                   <textarea
                     id="appeal-comments"
@@ -395,6 +410,7 @@ export default function StudentAppealsPage({ session, profile }) {
                       <strong>{appeal.class?.name || 'Attendance appeal'} - {formatDate(appeal.appeal_date)}</strong>
                       <span>
                         {appeal.reason}
+                        {reasonCodeLabel(appeal.reason_code) ? ` - ${reasonCodeLabel(appeal.reason_code)}` : ''}
                         {appeal.session?.started_at ? ` - ${formatTime(appeal.session.started_at)}` : ''}
                       </span>
                       {appeal.teacher_response && <em>{appeal.teacher_response}</em>}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Clock3, Edit3, Plus, Search, Trash2, Wand2 } from 'lucide-react'
 import { api, supabase } from '../../api/client'
 import Loader from '../Loader'
+import ConfirmDialog from '../ConfirmDialog'
 
 const DAYS = [
   { value: 1, label: 'Monday' },
@@ -52,6 +53,7 @@ export default function TimetableManager() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const selectedClass = useMemo(
     () => classes.find((classItem) => classItem.id === form.class_id) || null,
     [classes, form.class_id],
@@ -153,10 +155,9 @@ export default function TimetableManager() {
   }
 
   const deletePeriod = async (period) => {
-    const confirmed = window.confirm(`Delete ${classLabel(period.class)} on ${dayLabel(period.day_of_week)}?`)
-    if (!confirmed) return
-
     const data = await api.delete(`/api/timetable/admin/${period.id}`)
+    setDeleteTarget(null)
+
     if (data?.error) {
       setNotice({ type: 'error', text: data.error })
       return
@@ -366,7 +367,7 @@ export default function TimetableManager() {
                     <Edit3 size={14} strokeWidth={2.2} />
                     Edit
                   </button>
-                  <button type="button" className="account-danger-button" onClick={() => deletePeriod(period)}>
+                  <button type="button" className="account-danger-button" onClick={() => setDeleteTarget(period)}>
                     <Trash2 size={14} strokeWidth={2.2} />
                     Delete
                   </button>
@@ -376,6 +377,18 @@ export default function TimetableManager() {
           </div>
         )}
       </section>
+
+      {deleteTarget && (
+        <ConfirmDialog
+          eyebrow="Delete timetable period"
+          title={classLabel(deleteTarget.class)}
+          description={`Remove the ${dayLabel(deleteTarget.day_of_week)} period for ${classLabel(deleteTarget.class)}? Teachers lose their scheduled window to start this class without an admin override.`}
+          confirmLabel="Delete period"
+          tone="danger"
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deletePeriod(deleteTarget)}
+        />
+      )}
     </div>
   )
 }

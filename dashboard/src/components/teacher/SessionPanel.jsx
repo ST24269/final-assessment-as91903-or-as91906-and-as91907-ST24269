@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Play, Square } from 'lucide-react'
 import { api } from '../../api/client'
+import ConfirmDialog from '../ConfirmDialog'
 
 function formatSessionTime(value) {
   return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'time not set'
@@ -16,6 +17,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
   const [loading, setLoading] = useState(false)
   const [loadingClasses, setLoadingClasses] = useState(true)
   const [error, setError] = useState(null)
+  const [confirmEnd, setConfirmEnd] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -124,6 +126,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
       setError('Could not end the session.')
     } finally {
       setLoading(false)
+      setConfirmEnd(false)
     }
   }
 
@@ -218,7 +221,7 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
           </div>
 
           <button
-            onClick={endSession}
+            onClick={() => setConfirmEnd(true)}
             disabled={loading}
             className="session-end-button"
           >
@@ -232,6 +235,18 @@ export default function SessionPanel({ activeSession, setActiveSession }) {
         <p className="portal-error-message">
           {error}
         </p>
+      )}
+
+      {confirmEnd && (
+        <ConfirmDialog
+          eyebrow="End session"
+          title={activeSession.classes?.name || 'Class session'}
+          description="This stops the reader from taking any more scans for this session."
+          confirmLabel="End session"
+          onClose={() => setConfirmEnd(false)}
+          onConfirm={endSession}
+          busy={loading}
+        />
       )}
     </section>
   )

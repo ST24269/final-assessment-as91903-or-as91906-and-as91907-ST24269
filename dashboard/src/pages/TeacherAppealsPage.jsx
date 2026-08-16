@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import Layout from '../components/Layout'
 import AppealsPanel from '../components/AppealsPanel'
 
 export default function TeacherAppealsPage({ session, profile }) {
+  const [view, setView] = useState('open')
+
   return (
     <Layout
       email={session.user.email}
@@ -23,7 +26,20 @@ export default function TeacherAppealsPage({ session, profile }) {
         Back to dashboard
       </Link>
 
-      <AppealsPanel mode="teacher" />
+      <div className="appeals-view-tabs" role="tablist" aria-label="Appeals view">
+        <button type="button" className={view === 'open' ? 'is-active' : ''} onClick={() => setView('open')}>
+          Open appeals
+        </button>
+        <button type="button" className={view === 'history' ? 'is-active' : ''} onClick={() => setView('history')}>
+          Appeal history
+        </button>
+      </div>
+
+      {view === 'open' ? (
+        <AppealsPanel mode="teacher" hideResolved />
+      ) : (
+        <AppealsPanel mode="teacher" historyOnly />
+      )}
     </Layout>
   )
 }

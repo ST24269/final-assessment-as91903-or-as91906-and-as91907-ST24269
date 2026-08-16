@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const supabase = require('../db/pool')
 const { authenticateUser, requireRole } = require('../middleware/auth')
-const { sendEmail } = require('../utils/email')
+const { sendEmail, isValidEmailAddress } = require('../utils/email')
 
 const VALID_ROLES = ['admin', 'teacher', 'student']
 const CARD_REQUESTS = {
@@ -32,6 +32,20 @@ router.patch('/me', async (req, res) => {
     }
 
     payload.session_start_buffer_minutes = buffer
+  }
+
+  if (req.body.contact_email !== undefined) {
+    if (req.profile.role === 'student') {
+      return res.status(400).json({ error: 'Preferred contact email is not available for student accounts.' })
+    }
+
+    const contactEmail = String(req.body.contact_email || '').trim()
+
+    if (contactEmail && !isValidEmailAddress(contactEmail)) {
+      return res.status(400).json({ error: 'Enter a valid contact email address.' })
+    }
+
+    payload.contact_email = contactEmail || null
   }
 
   const { data, error } = await supabase
